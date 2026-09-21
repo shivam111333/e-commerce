@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
 import { logout } from "../redux/slices/authSlice";
 
+
 import {
   FaShoppingCart,
   FaUser,
@@ -16,8 +17,13 @@ function Navbar() {
   const navigate = useNavigate();
 
   const { user, isAuthenticated } = useSelector((state) => state.auth);
+  const cartItems = useSelector((state) => state.cart.items);
 
   const [searchQuery, setSearchQuery] = useState("");
+  const cartCount = cartItems.reduce(
+  (total, item) => total + (item.quantity || 0),
+  0
+);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -99,39 +105,17 @@ function Navbar() {
           <div className="flex items-center gap-5">
 
             {/* ================= CART ================= */}
-            <Link
-              to="/cart"
-              className="
-                relative
-                p-2
-                text-gray-700
-                hover:text-blue-600
-                transition
-              "
-            >
-              <FaShoppingCart size={20} />
+            <div className="relative">
+  <FaShoppingCart className="text-xl" onClick={()=>{
+    navigate('/cart')
+  }} />
 
-              {/* Cart Count */}
-              <span
-                className="
-                  absolute
-                  -top-0.5
-                  -right-0.5
-                  bg-blue-600
-                  text-white
-                  text-[10px]
-                  font-bold
-                  w-4
-                  h-4
-                  rounded-full
-                  flex
-                  items-center
-                  justify-center
-                "
-              >
-                0
-              </span>
-            </Link>
+  {cartCount > 0 && (
+    <span className="absolute -top-2 -right-2 bg-blue-600 text-white text-xs rounded-full min-w-5 h-5 flex items-center justify-center px-1">
+      {cartCount}
+    </span>
+  )}
+</div>
 
             {/* ================= AUTH ================= */}
             {!isAuthenticated ? (

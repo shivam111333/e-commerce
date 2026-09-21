@@ -2,13 +2,14 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { FaShoppingCart, FaArrowLeft } from "react-icons/fa";
 import { toast } from "react-toastify";
-import { useSelector } from "react-redux";
+import { useSelector, useDispatch } from "react-redux";
+import { setCart as setReduxCart } from "../redux/slices/cartSlice.js";
 import api from "../api/axios.jsx";
 
 function ProductDetails() {
-
   const { id } = useParams();
   const navigate = useNavigate();
+  const dispatch = useDispatch();
 
   const [product, setProduct] = useState(null);
   const [selectedVariant, setSelectedVariant] = useState(null);
@@ -21,6 +22,9 @@ function ProductDetails() {
 
   const { isAuthenticated } = useSelector((state) => state.auth);
 
+  const [cartItems, setCartItems] = useState([]);
+  const [addingToCart, setAddingToCart] = useState(false);
+
   // =========================
   // FETCH PRODUCT
   // =========================
@@ -32,9 +36,13 @@ function ProductDetails() {
         setError("");
 
         const response = await api.get(`/product/${id}`);
+     
         const data = response.data;
+        console.log(data)
 
-        console.log("Product API response:", response.data);
+
+
+setProduct(data);
 
         setProduct(data);
 
@@ -46,9 +54,8 @@ function ProductDetails() {
 
           if (firstVariant.images?.length > 0) {
             setSelectedImage(firstVariant.images[0]);
-          } 
-        } 
-        
+          }
+        }
       } catch (error) {
         console.error(error);
 
@@ -60,6 +67,33 @@ function ProductDetails() {
 
     fetchProduct();
   }, [id]);
+
+  // =========================
+  // FETCH CART (to determine Add to Cart vs Go to Cart)
+  // =========================
+
+  useEffect(() => {
+    const fetchCart = async () => {
+      if (!isAuthenticated) {
+        setCartItems([]);
+        return;
+      }
+
+      try {
+        const response = await api.get("/cart");
+
+        const items = response.data?.data?.items || [];
+
+        setCartItems(items);
+        dispatch(setReduxCart(items));
+      } catch (error) {
+        setCartItems([]); // fail silently — don't block the page over this
+          toast.error(error);
+      }
+    };
+
+    fetchCart();
+  }, [isAuthenticated]);
 
   // =========================
   // VARIANT SELECTION
@@ -98,32 +132,48 @@ function ProductDetails() {
   // ADD TO CART
   // =========================
 
+  const handleAddToCart = async () => {
+    if (!isAuthenticated) {
+      toast.info("Please log in to add items to your cart.");
+      navigate("/login");
+      return;
+    }
 
+    if (!selectedVariant) {
+      toast.error("Please select a variant.");
+      return;
+    }
 
-const handleAddToCart = async () => {
-  if (!isAuthenticated) {
-    toast.info("Please log in to add items to your cart.");
-    navigate("/login" );
-    return;
-  }
+    if (selectedVariant.stock <= 0) {
+      toast.error("This variant is out of stock.");
+      return;
+    }
 
-  
+    try {
+      setAddingToCart(true);
 
-  if (selectedVariant.stock <= 0) {
-    toast.error("This variant is out of stock.");
-    return;
-  }
+      const response = await api.post("/cart", {
+        variant: selectedVariant._id,
+        quantity,
+      });
 
-  try {
-    await api.post("/cart", {
-      variant: selectedVariant._id,
-      quantity,
-    });
-    toast.success("Product added to cart.");
-  } catch (error) {
-    toast.error(error.response?.data?.message || "Failed to add to cart.");
-  }
-};
+     const items = response.data?.data?.items || [];
+
+setCartItems(items);
+dispatch(setReduxCart(items));
+      
+      toast.success("Product added to cart.");
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to add to cart.");
+    } finally {
+      setAddingToCart(false);
+    }
+  };
+
+  const handleGoToCart = () => {
+    navigate("/cart");
+  };
+
   // =========================
   // LOADING
   // =========================
@@ -163,11 +213,16 @@ const handleAddToCart = async () => {
 
   const currentStock = selectedVariant?.stock ?? product.stock ?? 0;
 
-  // Images for currently selected variant
-  const currentImages =
-    selectedVariant?.images?.length > 0
-      ? selectedVariant.images
-      : product.images || [];
+  // Is the currently selected variant already in the cart?
+  const isInCart = selectedVariant
+    ? cartItems.some((item) => {
+        const itemVariantId =
+          typeof item.variant === "string" ? item.variant : item.variant?._id;
+        return itemVariantId === selectedVariant._id;
+      })
+    : false;
+
+   
 
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4">
@@ -204,30 +259,6 @@ const handleAddToCart = async () => {
                   <p className="text-gray-400">No image available</p>
                 )}
               </div>
-
-              {/* Thumbnail Images */}
-
-              {currentImages.length > 0 && (
-                <div className="flex gap-3 mt-4 overflow-x-auto">
-                  {currentImages.map((image, index) => (
-                    <button
-                      key={index}
-                      onClick={() => setSelectedImage(image)}
-                      className={`w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden border-2 ${
-                        selectedImage === image
-                          ? "border-blue-600"
-                          : "border-gray-200"
-                      }`}
-                    >
-                      <img
-                        src={image}
-                        alt={`${product.name} ${index + 1}`}
-                        className="w-full h-full object-cover"
-                      />
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
 
             {/* =========================
@@ -235,19 +266,25 @@ const handleAddToCart = async () => {
             ========================= */}
 
             <div>
-              {/* Category */}
-
-              {product.category?.name && (
-                <p className="text-sm text-blue-600 font-medium mb-2">
-                  {product.category.name}
-                </p>
-              )}
+             
 
               {/* Product Name */}
 
               <h1 className="text-3xl md:text-4xl font-bold text-gray-900">
                 {product.name}
               </h1>
+              {product.category?.name && (
+  <p className="text-sm text-blue-600 font-medium mb-2">
+    Category: {product.category.name}
+  </p>
+)}
+        
+
+{product.subcategory?.name && (
+  <p className="text-sm text-gray-500 font-medium mb-2">
+    Subcategory: {product.subcategory.name}
+  </p>
+)}
 
               {/* Description */}
 
@@ -365,13 +402,18 @@ const handleAddToCart = async () => {
               ========================= */}
 
               <button
-                onClick={handleAddToCart}
-                disabled={currentStock <= 0}
+                onClick={isInCart ? handleGoToCart : handleAddToCart}
+                disabled={currentStock <= 0 || addingToCart}
                 className="mt-7 w-full bg-blue-600 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-3 hover:bg-blue-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
               >
                 <FaShoppingCart />
-
-                {currentStock > 0 ? "Add to Cart" : "Out of Stock"}
+                {currentStock > 0
+                  ? isInCart
+                    ? "Go to Cart"
+                    : addingToCart
+                    ? "Adding..."
+                    : "Add to Cart"
+                  : "Out of Stock"}
               </button>
 
               {/* Vendor */}

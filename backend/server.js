@@ -9,6 +9,7 @@ import subcategoryRoutes from "./routes/subcategoryRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
 import variantRoutes from "./routes/variantRoutes.js";
 import vendorRoutes from './routes/vendorRoutes.js'
+import cartRoutes from './routes/cartRoutes.js'
 
 const app = express();
 
@@ -22,7 +23,9 @@ app.use("/api/auth", authRoutes);
 app.use("/api/subcategory", subcategoryRoutes);
 app.use("/api/product", productRoutes);
 app.use("/api/variant", variantRoutes);
-app.use('/api/vendor',vendorRoutes);
+app.use('/api/vendor',vendorRoutes)
+app.use('/api/cart',cartRoutes)
+
 
 
 

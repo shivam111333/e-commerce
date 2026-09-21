@@ -10,8 +10,11 @@ export const getVendorProduct = async (req, res) => {
       });
     }
 
-    const product = await Product.find({ vendor: vendor_id });
-    return res.status(200).json(product);
+    const product = await Product.find({ vendor: vendor_id }).populate("category","name").populate("subcategory","name")
+    return res.status(200).json({
+      success:true,
+      data:product
+    });
   } catch (err) {
     return res.status(500).json({
       success: false,

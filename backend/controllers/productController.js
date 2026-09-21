@@ -6,7 +6,7 @@ import Variant from '../models/variantScehma.js';
 export const  getProduct=async(req,res)=>{
        try{
 
-           const Products=await Product.find();
+           const Products=await Product.find()
            if(Products.length==0)
            {
             return res.status(404).json({
@@ -46,7 +46,8 @@ export const getProductById = async (req, res) => {
       });
     }
 
-    const product = await Product.findById(id);
+    const product = await Product.findById(id).populate("category", "name ")
+.populate("subcategory", "name");
 
     if (!product) {
       return res.status(404).json({

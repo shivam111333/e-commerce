@@ -7,7 +7,8 @@ function AppContent() {
 
   const hideNavbar =
     location.pathname === "/login" ||
-    location.pathname === "/register";
+    location.pathname === "/register" ||
+     location.pathname.startsWith('/vendor')
 
   return (
     <>
