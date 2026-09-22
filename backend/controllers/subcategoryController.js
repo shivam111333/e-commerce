@@ -125,3 +125,31 @@ export const deletesubCategory = async (req, res) => {
     });
   }
 };
+
+
+export const getSubcategoriesByCategory = async (req, res) => {
+  try {
+    const categoryId = req.params.id;
+
+    if (!categoryId) {
+      return res.status(400).json({
+        success: false,
+        message: "Category ID is required",
+      });
+    }
+
+    const subcategories = await Subcategory.find({
+      category: categoryId,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: subcategories,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+};

@@ -102,7 +102,7 @@ export const createVariant = async (req, res) => {
       }
     }
       const duplicate = await Variant.findOne({
-      _id: { $ne: id },
+     
       product,
       attributeKey,
     });
@@ -267,6 +267,7 @@ export const deleteVariant = async (req, res) => {
       });
     }
     await Variant.findByIdAndDelete(id);
+    
     return res.status(200).json({ message: "Successfuly Deleted" });
   } catch (err) {
     res.status(500).json({
