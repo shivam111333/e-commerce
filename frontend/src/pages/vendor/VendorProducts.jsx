@@ -37,12 +37,12 @@ function VendorProducts() {
 
   // Search products
   const filteredProducts = products.filter((product) =>
-    product.name.toLowerCase().includes(search.toLowerCase())
+    product.name.toLowerCase().includes(search.toLowerCase()),
   );
 
   const handleDelete = async (productId) => {
     const confirmDelete = window.confirm(
-      "Are you sure you want to delete this product?"
+      "Are you sure you want to delete this product?",
     );
 
     if (!confirmDelete) return;
@@ -51,7 +51,7 @@ function VendorProducts() {
       await api.delete(`/product/${productId}`);
 
       setProducts((prev) =>
-        prev.filter((product) => product._id !== productId)
+        prev.filter((product) => product._id !== productId),
       );
 
       toast.success("Product deleted successfully");
@@ -64,14 +64,10 @@ function VendorProducts() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-
         {/* Header */}
         <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-
           <div>
-            <h1 className="text-2xl font-bold text-gray-800">
-              My Products
-            </h1>
+            <h1 className="text-2xl font-bold text-gray-800">My Products</h1>
 
             <p className="mt-1 text-sm text-gray-500">
               Manage your products and their variants
@@ -91,9 +87,7 @@ function VendorProducts() {
 
         {/* Search / Filter */}
         <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-
           <div className="flex flex-col gap-3 md:flex-row">
-
             {/* Search */}
             <div className="relative flex-1">
               <FaSearch
@@ -120,23 +114,19 @@ function VendorProducts() {
                 {products.length} Products
               </span>
             </div>
-
           </div>
         </div>
 
         {/* Loading */}
         {loading && (
           <div className="rounded-xl border border-gray-200 bg-white py-16 text-center">
-            <p className="text-gray-500">
-              Loading products...
-            </p>
+            <p className="text-gray-500">Loading products...</p>
           </div>
         )}
 
         {/* Empty */}
         {!loading && products.length === 0 && (
           <div className="rounded-xl border border-gray-200 bg-white py-16 text-center shadow-sm">
-
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
               <FaBoxOpen size={26} className="text-gray-400" />
             </div>
@@ -157,30 +147,22 @@ function VendorProducts() {
             >
               Add Your First Product
             </button>
-
           </div>
         )}
 
         {/* No Search Result */}
-        {!loading &&
-          products.length > 0 &&
-          filteredProducts.length === 0 && (
-            <div className="rounded-xl border border-gray-200 bg-white py-12 text-center">
-              <p className="text-gray-500">
-                No products found for "{search}"
-              </p>
-            </div>
-          )}
+        {!loading && products.length > 0 && filteredProducts.length === 0 && (
+          <div className="rounded-xl border border-gray-200 bg-white py-12 text-center">
+            <p className="text-gray-500">No products found for "{search}"</p>
+          </div>
+        )}
 
         {/* Product Table */}
         {!loading && filteredProducts.length > 0 && (
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-
             {/* Desktop Table */}
             <div className="hidden overflow-x-auto md:block">
-
               <table className="w-full">
-
                 <thead className="border-b border-gray-200 bg-gray-50">
                   <tr>
                     <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -202,23 +184,16 @@ function VendorProducts() {
                 </thead>
 
                 <tbody className="divide-y divide-gray-100">
-
                   {filteredProducts.map((product) => (
                     <tr
                       key={product._id}
                       className="transition hover:bg-gray-50"
                     >
-
                       {/* Product */}
                       <td className="px-6 py-5">
-
                         <div className="flex items-center gap-4">
-
                           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-gray-100">
-                            <FaBoxOpen
-                              className="text-gray-400"
-                              size={20}
-                            />
+                            <FaBoxOpen className="text-gray-400" size={20} />
                           </div>
 
                           <div>
@@ -230,9 +205,7 @@ function VendorProducts() {
                               {product.description || "No description"}
                             </p>
                           </div>
-
                         </div>
-
                       </td>
 
                       {/* Category */}
@@ -241,20 +214,16 @@ function VendorProducts() {
                           {product.category?.name || "Category"}
                         </span>
                       </td>
-                           {/* SubCategory */}
-                       <td className="px-6 py-5">
+                      {/* SubCategory */}
+                      <td className="px-6 py-5">
                         <span className="rounded-full bg-blue-50 px-5 py-1 text-xs font-medium text-blue-600">
                           {product.subcategory?.name || "Category"}
                         </span>
                       </td>
 
-                     
-
                       {/* Actions */}
                       <td className="px-6 py-5">
-
                         <div className="flex justify-end gap-2">
-
                           <button
                             onClick={() =>
                               navigate(`/vendor/products/${product._id}`)
@@ -270,9 +239,7 @@ function VendorProducts() {
 
                           <button
                             onClick={() =>
-                              navigate(
-                                `/vendor/products/edit/${product._id}`
-                              )
+                              navigate(`/vendor/products/${product._id}/edit`)
                             }
                             className="rounded-lg bg-gray-100 p-2
                                        text-gray-600 hover:bg-gray-200"
@@ -287,40 +254,24 @@ function VendorProducts() {
                           >
                             <FaTrash size={14} />
                           </button>
-
                         </div>
-
                       </td>
-
                     </tr>
                   ))}
-
                 </tbody>
-
               </table>
-
             </div>
 
             {/* Mobile Cards */}
             <div className="divide-y divide-gray-100 md:hidden">
-
               {filteredProducts.map((product) => (
-                <div
-                  key={product._id}
-                  className="p-5"
-                >
-
+                <div key={product._id} className="p-5">
                   <div className="flex items-start gap-4">
-
                     <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-gray-100">
-                      <FaBoxOpen
-                        className="text-gray-400"
-                        size={20}
-                      />
+                      <FaBoxOpen className="text-gray-400" size={20} />
                     </div>
 
                     <div className="min-w-0 flex-1">
-
                       <h3 className="font-semibold text-gray-800">
                         {product.name}
                       </h3>
@@ -334,13 +285,10 @@ function VendorProducts() {
                           {product.category?.name || "Category"}
                         </span>
                       </div>
-
                     </div>
-
                   </div>
 
                   <div className="mt-4 flex gap-2">
-
                     <button
                       onClick={() =>
                         navigate(`/vendor/products/${product._id}`)
@@ -356,9 +304,7 @@ function VendorProducts() {
 
                     <button
                       onClick={() =>
-                        navigate(
-                          `/vendor/products/edit/${product._id}`
-                        )
+                        navigate(`/vendor/products/edit/${product._id}`)
                       }
                       className="rounded-lg bg-gray-100 px-3 py-2
                                  text-gray-600 hover:bg-gray-200"
@@ -373,17 +319,12 @@ function VendorProducts() {
                     >
                       <FaTrash size={14} />
                     </button>
-
                   </div>
-
                 </div>
               ))}
-
             </div>
-
           </div>
         )}
-
       </div>
     </div>
   );

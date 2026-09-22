@@ -9,6 +9,7 @@ import {
 import { toast } from "react-toastify";
 import api from "../../api/axios";
 
+
 function VendorProductView() {
   const { id } = useParams();
   const navigate = useNavigate();

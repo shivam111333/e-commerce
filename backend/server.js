@@ -10,7 +10,7 @@ import productRoutes from "./routes/productRoutes.js";
 import variantRoutes from "./routes/variantRoutes.js";
 import vendorRoutes from './routes/vendorRoutes.js'
 import cartRoutes from './routes/cartRoutes.js'
-
+import orderRoutes from './routes/orderRoutes.js'
 const app = express();
 
 app.use(express.json());
@@ -25,6 +25,7 @@ app.use("/api/product", productRoutes);
 app.use("/api/variant", variantRoutes);
 app.use('/api/vendor',vendorRoutes)
 app.use('/api/cart',cartRoutes)
+app.use('/api/order',orderRoutes)
 
 
 

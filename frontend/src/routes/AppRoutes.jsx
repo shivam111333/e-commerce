@@ -11,11 +11,15 @@ import VendorDashboard from "../pages/vendor/VendorDashboard.jsx";
 import VendorProducts from "../pages/vendor/VendorProducts.jsx";
 import AddProduct from "../pages/vendor/AddProduct";
 import AddVariant from "../pages/vendor/AddVariant.jsx";
+import EditProduct from "../pages/vendor/EditProduct";
+import VendorProductView from "../pages/vendor/VendorProductView.jsx";
+import EditVariant from '../pages/vendor/EditVariant.jsx'
 
 import ProtectedRoute from "./ProtectedRoute.jsx";
 import Unauthorized from "../pages/Unauthorized.jsx";
 import Cart from "../pages/Customer/Cart.jsx";
-import VendorProductView from "../pages/vendor/VendorProductView.jsx";
+import Checkout from "../pages/Customer/Checkout.jsx";
+
 
 function AppRoutes() {
   return (
@@ -39,6 +43,9 @@ function AppRoutes() {
           <Route path="/vendor/products/:id" element={<VendorProductView/>}/> 
             <Route path="/vendor/products/add" element={<AddProduct />}/>
             <Route path="/vendor/products/:id/add-variant" element={<AddVariant />}/>
+            <Route path='/vendor/products/:id/edit' element={<EditProduct/>}/>
+            <Route path="/vendor/variants/:id/edit" element={<EditVariant />}
+/>
         </Route>
 
         <Route
@@ -46,6 +53,9 @@ function AppRoutes() {
             <ProtectedRoute allowedRoles={["user", "vendor", "admin"]} />}>
           <Route path="/cart" element={<Cart />} />
         </Route>
+        <Route element={<ProtectedRoute allowedRoles={["user"]} />}>
+  <Route path="/checkout" element={<Checkout />} />
+</Route>
       </Routes>
     </>
   );

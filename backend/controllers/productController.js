@@ -1,7 +1,7 @@
 import Product from "../models/productSchema.js";
 import Variant from "../models/variantScehma.js";
 // import Category from '../models/categorySchema.js'
-// import Subcategory from '../models/subcategorySchema.js'
+import Subcategory from '../models/subcategorySchema.js'
 
 export const getProduct = async (req, res) => {
   try {
@@ -114,33 +114,75 @@ export const createProduct = async (req, res) => {
 export const updateProduct = async (req, res) => {
   try {
     const id = req.params.id;
+
     if (!id) {
-      return res.json({ message: "Id is required" });
-    }
-    const { name, description, category, subcategory } = req.body;
-    if (!name || !description || !category || !subcategory) {
-      return res.json({ message: "All Field are required" });
-    }
-    const exist_product = await Product.findById(id);
-    if (!exist_product) {
-      return res.status(403).json({
-        message: "Product Not found",
+      return res.status(400).json({
+        success: false,
+        message: "Product ID is required",
       });
     }
-    const vendor = req.user._id;
 
-    const updated_product = await Product.findByIdAndUpdate(
-      id,
-      { name: name.trim(), description, category, subcategory, vendor },
-      {
-        new: true,
-        runValidator: true,
-      },
-    );
-    return res
-      .status(200)
-      .json({ success: true, message: "Successfully Updated" });
+    const { name, description, category, subcategory } = req.body;
+
+    if (
+      !name?.trim() ||
+      !description?.trim() ||
+      !category ||
+      !subcategory
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "All fields are required",
+      });
+    }
+
+    const product = await Product.findById(id);
+
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found",
+      });
+    }
+
+    // Vendor can edit only their own product
+    if (
+      product.vendor.toString() !== req.user._id.toString()
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to edit this product",
+      });
+    }
+
+    // Verify subcategory belongs to selected category
+    const subcategoryExists = await Subcategory.findOne({
+      _id: subcategory,
+      category: category,
+    });
+
+    if (!subcategoryExists) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid subcategory for selected category",
+      });
+    }
+
+    product.name = name.trim();
+    product.description = description.trim();
+    product.category = category;
+    product.subcategory = subcategory;
+
+    await product.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Product updated successfully",
+      data: product,
+    });
   } catch (err) {
+    console.error(err);
+
     return res.status(500).json({
       success: false,
       message: err.message,

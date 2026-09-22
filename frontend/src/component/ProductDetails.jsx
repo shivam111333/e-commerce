@@ -36,13 +36,15 @@ function ProductDetails() {
         setError("");
 
         const response = await api.get(`/product/${id}`);
-     
-        const data = response.data;
-        console.log(data)
 
+        console.log("Product response:", response.data);
 
+        const data = response.data.data;
 
-setProduct(data);
+        if (!data?._id) {
+          setError("Product not found.");
+          return;
+        }
 
         setProduct(data);
 
@@ -88,7 +90,7 @@ setProduct(data);
         dispatch(setReduxCart(items));
       } catch (error) {
         setCartItems([]); // fail silently — don't block the page over this
-          toast.error(error);
+        toast.error(error);
       }
     };
 
@@ -157,11 +159,11 @@ setProduct(data);
         quantity,
       });
 
-     const items = response.data?.data?.items || [];
+      const items = response.data?.data?.items || [];
 
-setCartItems(items);
-dispatch(setReduxCart(items));
-      
+      setCartItems(items);
+      dispatch(setReduxCart(items));
+
       toast.success("Product added to cart.");
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to add to cart.");
@@ -222,8 +224,33 @@ dispatch(setReduxCart(items));
       })
     : false;
 
+  const handleCheckout = () => {
+    if (!isAuthenticated) {
+      toast.info("Please log in to continue.");
+      navigate("/login");
+      return;
+    }
+
    
 
+    if (selectedVariant.stock <= 0) {
+      toast.error("This variant is out of stock.");
+      return;
+    }
+
+    if (quantity > selectedVariant.stock) {
+      toast.error("Selected quantity is greater than available stock.");
+      return;
+    }
+
+    navigate("/checkout", {
+      state: {
+        buyNow: true,
+        variant: selectedVariant,
+        quantity,
+      },
+    });
+  };
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4">
       <div className="max-w-7xl mx-auto">
@@ -266,25 +293,22 @@ dispatch(setReduxCart(items));
             ========================= */}
 
             <div>
-             
-
               {/* Product Name */}
 
               <h1 className="text-3xl md:text-4xl font-bold text-gray-900">
                 {product.name}
               </h1>
               {product.category?.name && (
-  <p className="text-sm text-blue-600 font-medium mb-2">
-    Category: {product.category.name}
-  </p>
-)}
-        
+                <p className="text-sm text-blue-600 font-medium mb-2">
+                  Category: {product.category.name}
+                </p>
+              )}
 
-{product.subcategory?.name && (
-  <p className="text-sm text-gray-500 font-medium mb-2">
-    Subcategory: {product.subcategory.name}
-  </p>
-)}
+              {product.subcategory?.name && (
+                <p className="text-sm text-gray-500 font-medium mb-2">
+                  Subcategory: {product.subcategory.name}
+                </p>
+              )}
 
               {/* Description */}
 
@@ -401,32 +425,30 @@ dispatch(setReduxCart(items));
                   ADD TO CART
               ========================= */}
 
-              <button
-                onClick={isInCart ? handleGoToCart : handleAddToCart}
-                disabled={currentStock <= 0 || addingToCart}
-                className="mt-7 w-full bg-blue-600 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-3 hover:bg-blue-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
-              >
-                <FaShoppingCart />
-                {currentStock > 0
-                  ? isInCart
-                    ? "Go to Cart"
-                    : addingToCart
-                    ? "Adding..."
-                    : "Add to Cart"
-                  : "Out of Stock"}
-              </button>
+              <div className="flex gap-4 mt-7 w-full">
+                <button
+                  onClick={isInCart ? handleGoToCart : handleAddToCart}
+                  disabled={currentStock <= 0 || addingToCart}
+                  className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-3 hover:bg-blue-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
+                >
+                  <FaShoppingCart />
+                  {currentStock > 0
+                    ? isInCart
+                      ? "Go to Cart"
+                      : addingToCart
+                      ? "Adding..."
+                      : "Add to Cart"
+                    : "Out of Stock"}
+                </button>
 
-              {/* Vendor */}
-
-              {product.vendor?.name && (
-                <div className="mt-6 pt-6 border-t border-gray-200">
-                  <p className="text-sm text-gray-500">Sold by</p>
-
-                  <p className="font-semibold text-gray-800">
-                    {product.vendor.name}
-                  </p>
-                </div>
-              )}
+                <button
+                  onClick={handleCheckout}
+                  disabled={currentStock <= 0}
+                  className="flex-1 bg-emerald-600 text-white py-3 rounded-lg font-semibold flex items-center justify-center hover:bg-emerald-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
+                >
+                  Buy Now
+                </button>
+              </div>
             </div>
           </div>
         </div>
