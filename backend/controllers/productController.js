@@ -1,5 +1,5 @@
 import Product from "../models/productSchema.js";
-import Variant from "../models/variantScehma.js";
+import Variant from "../models/variantSchema.js";
 // import Category from '../models/categorySchema.js'
 import Subcategory from '../models/subcategorySchema.js'
 

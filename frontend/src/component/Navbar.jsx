@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
 import { logout } from "../redux/slices/authSlice";
-
+import { clearCart } from "../redux/slices/cartSlice";
 
 import {
   FaShoppingCart,
@@ -38,6 +38,7 @@ function Navbar() {
   const handleLogout = () => {
     localStorage.removeItem("token");
     dispatch(logout());
+    dispatch(clearCart());
     navigate("/");
   };
 
@@ -211,24 +212,10 @@ function Navbar() {
                     "
                   >
 
-                    {/* Profile */}
-                    <Link
-                      to="/profile"
-                      className="
-                        block
-                        px-4
-                        py-2.5
-                        text-gray-700
-                        hover:bg-gray-50
-                        hover:text-blue-600
-                        transition
-                      "
-                    >
-                      My Profile
-                    </Link>
+                    
 
                     {/* Orders */}
-                    <Link
+                {user?.role === "user" && (  <Link
                       to="/orders"
                       className="
                         block
@@ -241,7 +228,7 @@ function Navbar() {
                       "
                     >
                       My Orders
-                    </Link>
+                    </Link>)}
 
                     {/* Vendor Dashboard */}
                     {user?.role === "vendor" && (

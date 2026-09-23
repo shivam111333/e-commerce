@@ -9,6 +9,7 @@ import {
   FaChevronRight,
   FaEdit,
   FaTrash,
+  FaArrowLeft
 } from "react-icons/fa";
 
 function VendorProducts() {
@@ -84,6 +85,13 @@ function VendorProducts() {
             Add Product
           </button>
         </div>
+        <button
+                    onClick={() => navigate("/vendor/dashboard")}
+                    className="flex items-center gap-2 text-gray-600 hover:text-gray-900 w-fit"
+                  >
+                    <FaArrowLeft />
+                    Back to Dashboard
+                  </button>
 
         {/* Search / Filter */}
         <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">

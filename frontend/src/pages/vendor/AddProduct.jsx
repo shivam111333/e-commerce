@@ -42,7 +42,7 @@ function AddProduct() {
   // Fetch subcategories when category changes
   useEffect(() => {
     if (!product.category) {
-      setSubcategories([]);
+     
       return;
     }
 

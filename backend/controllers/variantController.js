@@ -1,5 +1,5 @@
 import Product from "../models/productSchema.js";
-import Variant from "../models/variantScehma.js";
+import Variant from "../models/variantSchema.js";
 import uploadToCloudinary from "../utils/uploadToCloudinary.js";
 
 export const getVariant = async (req, res) => {

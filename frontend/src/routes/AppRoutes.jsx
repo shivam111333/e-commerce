@@ -6,6 +6,7 @@ import Home from "../pages/Customer/Home.jsx";
 import Login from "../pages/auth/Login.jsx";
 import Register from "../pages/auth/Register.jsx";
 import ProductDeatils from "../component/ProductDetails.jsx";
+import Products from "../pages/Customer/Product.jsx";
 
 import VendorDashboard from "../pages/vendor/VendorDashboard.jsx";
 import VendorProducts from "../pages/vendor/VendorProducts.jsx";
@@ -19,11 +20,16 @@ import ProtectedRoute from "./ProtectedRoute.jsx";
 import Unauthorized from "../pages/Unauthorized.jsx";
 import Cart from "../pages/Customer/Cart.jsx";
 import Checkout from "../pages/Customer/Checkout.jsx";
+import Order from '../pages/Customer/Orders.jsx';
+import VendorOrders from "../pages/vendor/VendorOrders.jsx";
 
 
 function AppRoutes() {
   return (
     <>
+    
+
+
       <Routes>
         <Route>
           <Route path="/" element={<Home />} />
@@ -31,6 +37,7 @@ function AppRoutes() {
           <Route path="/register" element={<Register />} />
           <Route path="/product/:id" element={<ProductDeatils />} />
           <Route path="/unauthorized" element={<Unauthorized />} />
+          <Route path="/products" element={<Products />} />
         </Route>
 
         <Route element={<ProtectedRoute allowedRoles={["admin"]} />}>
@@ -44,8 +51,8 @@ function AppRoutes() {
             <Route path="/vendor/products/add" element={<AddProduct />}/>
             <Route path="/vendor/products/:id/add-variant" element={<AddVariant />}/>
             <Route path='/vendor/products/:id/edit' element={<EditProduct/>}/>
-            <Route path="/vendor/variants/:id/edit" element={<EditVariant />}
-/>
+            <Route path="/vendor/variants/:id/edit" element={<EditVariant />}/>
+            <Route path="/vendor/orders" element={<VendorOrders/>}/>
         </Route>
 
         <Route
@@ -55,6 +62,7 @@ function AppRoutes() {
         </Route>
         <Route element={<ProtectedRoute allowedRoles={["user"]} />}>
   <Route path="/checkout" element={<Checkout />} />
+  <Route path="/orders" element={<Order/>}/>
 </Route>
       </Routes>
     </>

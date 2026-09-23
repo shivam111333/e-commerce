@@ -4,10 +4,14 @@ import { FaArrowLeft, FaCheck } from "react-icons/fa";
 import { toast } from "react-toastify";
 import { useSelector } from "react-redux";
 import api from "../../api/axios.jsx";
+import { clearCart } from "../../redux/slices/cartSlice";
+import {useDispatch } from "react-redux";
+
 
 function Checkout() {
   const location = useLocation();
   const navigate = useNavigate();
+  const dispatch=useDispatch()
 
   const { isAuthenticated } = useSelector((state) => state.auth);
 
@@ -99,14 +103,14 @@ function Checkout() {
           navigate("/cart");
           return;
         }
+       
 
         setItems(cartItems);
       } catch (error) {
         console.error(error);
 
         toast.error(
-          error.response?.data?.message ||
-            "Unable to load checkout items."
+          error.response?.data?.message || "Unable to load checkout items.",
         );
       } finally {
         setLoading(false);
@@ -114,13 +118,7 @@ function Checkout() {
     };
 
     loadCheckoutItems();
-  }, [
-    isAuthenticated,
-    isBuyNow,
-    buyNowVariant,
-    buyNowQuantity,
-    navigate,
-  ]);
+  }, [isAuthenticated, isBuyNow, buyNowVariant, buyNowQuantity, navigate]);
 
   // ==========================================
   // ADDRESS CHANGE
@@ -157,14 +155,7 @@ function Checkout() {
     // Validate address
     // --------------------------------------
 
-    const {
-      name,
-      phone,
-      address,
-      city,
-      state,
-      pincode,
-    } = shippingAddress;
+    const { name, phone, address, city, state, pincode } = shippingAddress;
 
     if (
       !name.trim() ||
@@ -205,7 +196,9 @@ function Checkout() {
 
       if (item.quantity > item.variant.stock) {
         toast.error(
-          `${item.variant.attributes?.Color || "Product"} does not have enough stock.`
+          `${
+            item.variant.attributes?.Color || "Product"
+          } does not have enough stock.`,
         );
         return;
       }
@@ -241,26 +234,21 @@ function Checkout() {
       const response = await api.post("/order", orderData);
 
       if (!response.data?.success) {
-        toast.error(
-          response.data?.message || "Failed to place order."
-        );
+        toast.error(response.data?.message || "Failed to place order.");
         return;
       }
 
       toast.success("Order placed successfully!");
 
-      // --------------------------------------
-      // Redirect
-      // --------------------------------------
+       if (!isBuyNow) {
+        dispatch(clearCart());
+      }
 
       navigate("/orders");
     } catch (error) {
       console.error(error);
 
-      toast.error(
-        error.response?.data?.message ||
-          "Failed to place order."
-      );
+      toast.error(error.response?.data?.message || "Failed to place order.");
     } finally {
       setPlacingOrder(false);
     }
@@ -273,9 +261,7 @@ function Checkout() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p className="text-gray-500 text-lg">
-          Loading checkout...
-        </p>
+        <p className="text-gray-500 text-lg">Loading checkout...</p>
       </div>
     );
   }
@@ -286,9 +272,7 @@ function Checkout() {
 
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4">
-
       <div className="max-w-6xl mx-auto">
-
         {/* Back */}
         <button
           type="button"
@@ -301,9 +285,7 @@ function Checkout() {
 
         {/* Heading */}
         <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">
-            Checkout
-          </h1>
+          <h1 className="text-3xl font-bold text-gray-900">Checkout</h1>
 
           <p className="text-gray-500 mt-1">
             {isBuyNow
@@ -313,25 +295,20 @@ function Checkout() {
         </div>
 
         <form onSubmit={handlePlaceOrder}>
-
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
             {/* =================================
                 LEFT
             ================================= */}
 
             <div className="lg:col-span-2 space-y-6">
-
               {/* SHIPPING ADDRESS */}
 
               <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-
                 <h2 className="text-xl font-semibold text-gray-900 mb-5">
                   Shipping Address
                 </h2>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
                   {/* Name */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -429,7 +406,6 @@ function Checkout() {
                       className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
-
                 </div>
               </div>
 
@@ -438,9 +414,7 @@ function Checkout() {
               ================================= */}
 
               <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-
                 <div className="flex items-center justify-between mb-5">
-
                   <h2 className="text-xl font-semibold text-gray-900">
                     Order Items
                   </h2>
@@ -450,34 +424,26 @@ function Checkout() {
                       Buy Now
                     </span>
                   )}
-
                 </div>
 
                 <div className="space-y-4">
-
                   {items.map((item) => {
-
                     const variant = item.variant;
 
-                    const attributes =
-                      variant?.attributes || {};
+                    const attributes = variant?.attributes || {};
 
-                    const image =
-                      variant?.images?.[0];
+                    const image = variant?.images?.[0];
 
                     const itemTotal =
-                      Number(variant?.price || 0) *
-                      Number(item.quantity || 0);
+                      Number(variant?.price || 0) * Number(item.quantity || 0);
 
                     return (
                       <div
                         key={variant?._id}
                         className="flex gap-4 border border-gray-200 rounded-lg p-4"
                       >
-
                         {/* Image */}
                         <div className="w-24 h-24 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center">
-
                           {image ? (
                             <img
                               src={image}
@@ -489,12 +455,10 @@ function Checkout() {
                               No Image
                             </span>
                           )}
-
                         </div>
 
                         {/* Details */}
                         <div className="flex-1">
-
                           <h3 className="font-semibold text-gray-900">
                             {variant?.product?.name ||
                               item.product?.name ||
@@ -502,21 +466,12 @@ function Checkout() {
                           </h3>
 
                           <div className="mt-1 flex flex-wrap gap-2">
-
-                            {Object.entries(attributes).map(
-                              ([key, value]) => (
-                                <span
-                                  key={key}
-                                  className="text-sm text-gray-500"
-                                >
-                                  <span className="font-medium">
-                                    {key}:
-                                  </span>{" "}
-                                  {value}
-                                </span>
-                              )
-                            )}
-
+                            {Object.entries(attributes).map(([key, value]) => (
+                              <span key={key} className="text-sm text-gray-500">
+                                <span className="font-medium">{key}:</span>{" "}
+                                {value}
+                              </span>
+                            ))}
                           </div>
 
                           <p className="text-sm text-gray-500 mt-2">
@@ -526,21 +481,17 @@ function Checkout() {
                           <p className="font-semibold text-gray-900 mt-1">
                             ₹{variant?.price}
                           </p>
-
                         </div>
 
                         {/* Total */}
                         <div className="font-semibold text-gray-900">
                           ₹{itemTotal}
                         </div>
-
                       </div>
                     );
                   })}
-
                 </div>
               </div>
-
             </div>
 
             {/* =================================
@@ -548,15 +499,12 @@ function Checkout() {
             ================================= */}
 
             <div>
-
               <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm sticky top-24">
-
                 <h2 className="text-xl font-semibold text-gray-900 mb-5">
                   Order Summary
                 </h2>
 
                 <div className="space-y-3">
-
                   <div className="flex justify-between text-gray-600">
                     <span>Items</span>
                     <span>{items.length}</span>
@@ -569,27 +517,18 @@ function Checkout() {
 
                   <div className="flex justify-between text-gray-600">
                     <span>Shipping</span>
-                    <span className="text-green-600">
-                      Free
-                    </span>
+                    <span className="text-green-600">Free</span>
                   </div>
 
                   <div className="border-t border-gray-200 pt-4 mt-4">
-
                     <div className="flex justify-between">
-
-                      <span className="text-lg font-semibold">
-                        Total
-                      </span>
+                      <span className="text-lg font-semibold">Total</span>
 
                       <span className="text-2xl font-bold text-gray-900">
                         ₹{totalAmount}
                       </span>
-
                     </div>
-
                   </div>
-
                 </div>
 
                 {/* Place Order */}
@@ -601,25 +540,15 @@ function Checkout() {
                 >
                   <FaCheck />
 
-                  {placingOrder
-                    ? "Placing Order..."
-                    : "Place Order"}
+                  {placingOrder ? "Placing Order..." : "Place Order"}
                 </button>
 
-                <p className="text-xs text-gray-500 text-center mt-4">
-                  Your order will be created after you confirm.
-                </p>
-
+               
               </div>
-
             </div>
-
           </div>
-
         </form>
-
       </div>
-
     </div>
   );
 }

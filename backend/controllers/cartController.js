@@ -1,5 +1,5 @@
 import Cart from "../models/cartSchema.js";
-import Variant from "../models/variantScehma.js";
+import Variant from "../models/variantSchema.js";
 
 export const getCart = async (req, res) => {
   try {
