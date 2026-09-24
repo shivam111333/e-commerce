@@ -5,7 +5,7 @@ export const getsubCategory = async (req, res) => {
   try {
     const subcategory = await Subcategory.find();
 
-    return res.status(200).json(subcategory);
+    return res.status(200).json({data:subcategory});
   } catch (err) {
     return res.status(500).json({
       success: false,
@@ -51,6 +51,7 @@ export const createsubCategory = async (req, res) => {
     const result = await Subcategory.create({ name: name.trim(), category });
     return res.status(201).json({
       message: "Sub-Category successfully Added",
+      data:result
     });
   } catch (err) {
     return res.status(500).json({

@@ -1,12 +1,23 @@
 import User from '../models/userSchema.js'
 
+
 export const getAllUser=async(req,res)=>{
     try{
 
         const user=await User.find({
            role:"user"
         })
-        return res.json(user);
+
+         if(user.length==0)
+         {
+            return res.json({
+                message:"No user found"
+            })
+         }
+        return res.status(200).json({
+           data:user,
+         
+        });
                                                     
     }catch(err)
     {
@@ -19,10 +30,18 @@ export const getAllUser=async(req,res)=>{
 export const getAllVendor=async(req,res)=>{
     try{
 
-        const user=await User.find({
+        const vendor=await User.find({
            role:"vendor"
         })
-        return res.json(user);
+        if(vendor.length==0)
+        {
+            return res.json({
+                message:"No Vendor found"
+            })
+        }
+        return res.status(200).json({
+            data:vendor
+        });
                                                     
     }catch(err)
     {
@@ -32,3 +51,4 @@ export const getAllVendor=async(req,res)=>{
         })
     }
 }
+

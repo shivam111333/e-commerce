@@ -1,140 +1,64 @@
-import api from '../../api/axios.jsx'
-import { useNavigate } from 'react-router-dom';
-import { useSelector ,useDispatch} from 'react-redux'
-import { logout } from '../../redux/slices/authSlice.js'
-import { HiOutlineSquares2X2 } from "react-icons/hi2";
+import { useState } from "react";
 
-function AdminDashboard()
-{
-  const dispatch=useDispatch();
-  const navigate=useNavigate();
-   const user=useSelector((state)=>state.auth.user)
+import AdminSidebar from "../../component/AdminSidebar.jsx";
 
-   const handleLogout=()=>{
-    dispatch(logout());
-   }
-  return (<>
-   <div className="min-h-screen bg-gray-100">
-      <div className="max-w-7xl mx-auto px-4 py-6">
+import DashboardSection from "./sections/DashboardSection.jsx";
+import VendorsSection from "./sections/VendorsSection.jsx";
+import CategoriesSection from "./sections/CategoriesSection.jsx";
+import OrdersSection from "./sections/OrdersSection.jsx";
+import UsersSection from './sections/UsersSection.jsx'
 
-        {/* Top Welcome Section */}
-        <div className="flex items-center justify-between bg-white rounded-xl shadow-sm px-6 py-5 mb-6">
-          <div>
-            
-            <h1 className="text-2xl font-bold text-gray-800">
-              Welcome, {user.name}
-            </h1>
-          </div>
-           
-          <button
-            onClick={handleLogout}
-            className="px-5 py-2.5 bg-red-500 text-white font-medium rounded-lg
-                       hover:bg-red-600 transition duration-200"
-          >
-            Logout
-          </button>
-        </div>
 
-       
-        
+function AdminDashboard() {
 
-        {/* Navigation Section */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+    const [activeSection, setActiveSection] = useState("Dashboard");
 
-          {/* Products Button */}
-          <button
-            onClick={() => navigate("/admin/category")}
-            className="group bg-white rounded-xl shadow-sm border border-gray-100
-                       p-8 text-left hover:shadow-md hover:border-blue-200
-                       transition duration-200"
-          >
-            <div className="flex items-center justify-between">
+    const renderSection = () => {
 
-              <div>
-                <div className="text-4xl mb-4">
-                <HiOutlineSquares2X2 />
-                </div>
+        switch (activeSection) {
 
-                <h2 className="text-xl font-semibold text-gray-800">
-                 Category
-                </h2>
+            case "Dashboard":
+                return <DashboardSection />;
 
-                <p className="text-gray-500 mt-2">
-                  View and manage your products
-                </p>
-              </div>
+            case "Vendors":
+                return <VendorsSection />;
 
-              <span className="text-2xl text-gray-400 group-hover:text-blue-500 transition">
-                →
-              </span>
+            case "Categories":
+                return <CategoriesSection />;
 
-            </div>
-          </button>
+            case "Orders":
+                return <OrdersSection />;
 
-           <button
-            onClick={() => navigate("/vendor/products")}
-            className="group bg-white rounded-xl shadow-sm border border-gray-100
-                       p-8 text-left hover:shadow-md hover:border-blue-200
-                       transition duration-200"
-          >
-            <div className="flex items-center justify-between">
+            case "Customer":
+                return <UsersSection/>;
+      
+    
 
-              <div>
-                <div className="text-4xl mb-4">
-                  📦
-                </div>
+            default:
+                return <DashboardSection />;
+        }
+    };
 
-                <h2 className="text-xl font-semibold text-gray-800">
-                  Products
-                </h2>
+    return (
+        <div className="flex min-h-screen bg-gray-100">
 
-                <p className="text-gray-500 mt-2">
-                  View and manage your products
-                </p>
-              </div>
+            {/* Sidebar */}
 
-              <span className="text-2xl text-gray-400 group-hover:text-blue-500 transition">
-                →
-              </span>
+            <AdminSidebar
+                activeSection={activeSection}
+                setActiveSection={setActiveSection}
+            />
 
-            </div>
-          </button>
+            {/* Main Content */}
 
-          {/* Orders Button */}
-          <button
-            onClick={() => navigate("/vendor/orders")}
-            className="group bg-white rounded-xl shadow-sm border border-gray-100
-                       p-8 text-left hover:shadow-md hover:border-green-200
-                       transition duration-200"
-          >
-            <div className="flex items-center justify-between">
+            <main className="flex-1 p-8">
 
-              <div>
-                <div className="text-4xl mb-4">
-                  🛒
-                </div>
+                {renderSection()}
 
-                <h2 className="text-xl font-semibold text-gray-800">
-                  Orders
-                </h2>
-
-                <p className="text-gray-500 mt-2">
-                  View and track received orders
-                </p>
-              </div>
-
-              <span className="text-2xl text-gray-400 group-hover:text-green-500 transition">
-                →
-              </span>
-
-            </div>
-          </button>
+            </main>
 
         </div>
-
-      </div>
-    </div>
-    </>)
-  
+    );
 }
-export default AdminDashboard
+
+export default AdminDashboard;

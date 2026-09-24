@@ -6,11 +6,13 @@ import {
   createCategory,
   updateCategory,
   getCategoryById,
+  getAllProductOfCategory
 } from "../controllers/categoryController.js";
 import authentication from "../middlewares/authMiddleware.js";
 import authorization from "../middlewares/authorizationMiddleware.js";
 
 router.get("/", getCategory);
+router.get('/all/:id',authentication,authorization(["admin"]),getAllProductOfCategory)
 router.get("/:id", getCategoryById);
 
 router.post("/", authentication, authorization(["admin"]), createCategory);

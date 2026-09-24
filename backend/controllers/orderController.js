@@ -415,3 +415,32 @@ export const updateVendorOrderItemStatus = async (req, res) => {
     });
   }
 };
+
+export const getAllOrder =async(req,res)=>{
+   try{
+        const user=req.user._id
+       if(!user)
+       {
+        return res.staus(400).json({
+          success:false,
+          message:"User id is required"
+        })
+       }
+
+        const orders=await Order.find();
+
+        return res.status(200).json({
+          success:true,
+          data:orders
+        })
+
+   }catch(err)
+   {
+    return res.status(500).json({
+       success:false,
+       message:err.message
+    }
+
+    )
+   }
+}
