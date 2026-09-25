@@ -158,7 +158,7 @@ export const login=async(req,res)=>{
     
       
     
-        if (!user.status) {
+        if (user.status==="blocked") {
           return res.status(403).json({
             success: false,
             message:

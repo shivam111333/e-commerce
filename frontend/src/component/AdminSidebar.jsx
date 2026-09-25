@@ -5,8 +5,13 @@ import {
     FaShoppingBag,
     FaUser 
 } from "react-icons/fa";
+import  {useNavigate} from 'react-router-dom';
+import { useDispatch } from "react-redux";
+import { logout } from "../redux/slices/authSlice";
 
 function AdminSidebar({ activeSection, setActiveSection }) {
+    const navigate=useNavigate();
+    const dispatch=useDispatch()
 
     const menuItems = [
         {
@@ -33,6 +38,12 @@ function AdminSidebar({ activeSection, setActiveSection }) {
     
         
     ];
+
+     const handleLogout = () => {
+        localStorage.removeItem("token");
+        dispatch(logout());
+        navigate("/");
+      };
 
     return (
         <div className="w-64 bg-gray-900 text-white min-h-screen">
@@ -66,8 +77,24 @@ function AdminSidebar({ activeSection, setActiveSection }) {
                         </span>
 
                     </button>
+                    
 
                 ))}
+               <button
+                      type="button"
+                       onClick={()=>handleLogout()}
+                      className="
+                        w-full
+                        text-left
+                        px-4
+                        py-2.5
+                        text-red-500
+                        hover:bg-red-400 text-red-800
+                        transition
+                      "
+                    >
+                      Logout
+                    </button>
 
             </div>
 

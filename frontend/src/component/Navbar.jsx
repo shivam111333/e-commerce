@@ -106,7 +106,7 @@ function Navbar() {
           <div className="flex items-center gap-5">
 
             {/* ================= CART ================= */}
-            <div className="relative">
+          {user?.role === "user"   && <div className="relative">
   <FaShoppingCart className="text-xl" onClick={()=>{
     navigate('/cart')
   }} />
@@ -116,7 +116,7 @@ function Navbar() {
       {cartCount}
     </span>
   )}
-</div>
+</div>}
 
             {/* ================= AUTH ================= */}
             {!isAuthenticated ? (

@@ -281,8 +281,8 @@ function VendorProductView() {
                 </h2>
 
                 <p className="text-sm text-gray-500 mt-1">
-                  {variants.length} variant
-                  {variants.length !== 1 ? "s" : ""}
+                  {variants.length} 
+                
                 </p>
               </div>
 

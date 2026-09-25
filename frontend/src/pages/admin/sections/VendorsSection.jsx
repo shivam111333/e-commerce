@@ -5,7 +5,7 @@ import api from '../../../api/axios.jsx'
 
 
 function VendorsSection() {
-    const [vendors,setVendor]=useState("");
+    const [vendors,setVendor]=useState([]);
     const [loading,setLoading]=useState(true);
     const [status,setStatus]=useState([])
     const navigate=useNavigate();
@@ -32,14 +32,32 @@ function VendorsSection() {
     if (loading) {
     return <p>Loading Vendor...</p>;
   }
-  const handleStatusChange = (userId, newStatus) => {
-    
-    setStatus(prevUsers => 
-      prevUsers.map(user => 
-        user._id === userId ? { ...user, status: newStatus } : user
-      )
-    );
-}
+ const handleStatusChange =async (userId, newStatus) => {
+        try{
+         if(!userId || !newStatus)
+        {
+         toast.info("User id and status is required");
+         return 
+        }
+        const response=await api.patch('/admin',{userId,newStatus});
+        setStatus(response.data)
+        
+         
+     
+      setVendor((prevUsers) =>
+         prevUsers.map((user) =>
+           user._id === userId
+             ? { ...user, status: newStatus }
+             : user
+         )
+       );
+ 
+        }catch(err)
+        {
+         console.log(err)
+          toast.err("Unable to update the status")
+        }
+ }
 
   const formatDate = (isoString) => {
   if (!isoString) return "N/A";

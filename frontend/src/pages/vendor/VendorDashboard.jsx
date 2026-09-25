@@ -76,37 +76,10 @@ function VendorDashboard() {
               Products added by you
             </p>
           </div>
+</div>
+          
 
-          {/* Total Earnings */}
-          <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-            <p className="text-sm font-medium text-gray-500">
-              Total Earnings
-            </p>
-
-            <h2 className="text-3xl font-bold text-gray-800 mt-2">
-              ₹0
-            </h2>
-
-            <p className="text-sm text-gray-400 mt-1">
-              Total earnings from orders
-            </p>
-          </div>
-           {/* Total product sales completed delivered*/}
-        <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-            <p className="text-sm font-medium text-gray-500">
-              Total Sales
-            </p>
-
-            <h2 className="text-3xl font-bold text-gray-800 mt-2">
-              0
-            </h2>
-
-            <p className="text-sm text-gray-400 mt-1">
-              Products deliverd by you 
-            </p>
-          </div>
-
-        </div>
+           
         
 
         {/* Navigation Section */}
