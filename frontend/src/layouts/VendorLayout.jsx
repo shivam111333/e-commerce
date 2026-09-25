@@ -1,5 +1,5 @@
 import {Outlet} from 'react-router-dom'
-export const VendorDashboard=()=>{
+ const VendorDashboard=()=>{
     return (<>
     
     
@@ -7,3 +7,4 @@ export const VendorDashboard=()=>{
     
     </>)
 }
+export default VendorDashboard

@@ -1,6 +1,7 @@
 import Category from "../models/categorySchema.js";
 import Product from "../models/productSchema.js";
 import Subcategory from "../models/subcategorySchema.js";
+import Variant  from "../models/variantSchema.js";
 
 export const getCategory = async (req, res) => {
   try {
@@ -124,25 +125,53 @@ export const deleteCategory = async (req, res) => {
   }
 };
 
-export const getAllProductOfCategory = async (req, res) => {
+export const getProductsByCategory = async (req, res) => {
   try {
-    const category_id = req.params.id;
-    if (!category_id) {
-      return res.status(404).json({
-        success: false,
-        message: "Id is required",
+    const { categoryId } = req.params;
+     console.log("CATEGORY ID:", categoryId);
+
+
+    const products = await Product.find({
+      category: categoryId,
+    })
+      .populate("category", "name")
+      .populate("subcategory", "name");
+
+    if (products.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: [],
       });
     }
-    const product = await Product.find({ category: category_id });
+
+    const productIds = products.map((product) => product._id);
+
+    const variants = await Variant.find({
+      product: { $in: productIds },
+    });
+
+    const productsWithVariants = products.map((product) => {
+      const productVariants = variants.filter(
+        (variant) =>
+          variant.product.toString() === product._id.toString()
+      );
+
+      return {
+        ...product.toObject(),
+        variants: productVariants,
+      };
+    });
 
     return res.status(200).json({
       success: true,
-      data: product,
+      data: productsWithVariants,
     });
-  } catch (err) {
+  } catch (error) {
+    console.error(error);
+
     return res.status(500).json({
       success: false,
-      message: err.message,
+      message: error.message,
     });
   }
 };

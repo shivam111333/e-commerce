@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState ,useEffect} from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
 import { logout } from "../redux/slices/authSlice";
@@ -18,6 +18,7 @@ function Navbar() {
 
   const { user, isAuthenticated } = useSelector((state) => state.auth);
   const cartItems = useSelector((state) => state.cart.items);
+
 
   const [searchQuery, setSearchQuery] = useState("");
   const cartCount = cartItems.reduce(
@@ -41,8 +42,10 @@ function Navbar() {
     dispatch(clearCart());
     navigate("/");
   };
+ 
+  
 
-  return (
+ return (
     <nav className="sticky top-0 z-50 bg-white border-b border-gray-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
@@ -338,6 +341,7 @@ function Navbar() {
     </nav>
   );
 }
+
 
 export default Navbar;
 
