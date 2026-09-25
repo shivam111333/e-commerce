@@ -421,7 +421,7 @@ export const getAllOrder =async(req,res)=>{
         const user=req.user._id
        if(!user)
        {
-        return res.staus(400).json({
+        return res.status(400).json({
           success:false,
           message:"User id is required"
         })

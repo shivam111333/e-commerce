@@ -232,7 +232,7 @@ export const login=async(req,res)=>{
     
             role: user.role,
 
-            staus:user.status
+            status:user.status
     
           },
         });
