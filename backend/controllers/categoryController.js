@@ -128,8 +128,8 @@ export const deleteCategory = async (req, res) => {
 export const getProductsByCategory = async (req, res) => {
   try {
     const { categoryId } = req.params;
-     console.log("CATEGORY ID:", categoryId);
 
+    console.log("CATEGORY ID:", categoryId);
 
     const products = await Product.find({
       category: categoryId,
@@ -146,26 +146,33 @@ export const getProductsByCategory = async (req, res) => {
 
     const productIds = products.map((product) => product._id);
 
+    // Get all variants for these products
     const variants = await Variant.find({
       product: { $in: productIds },
     });
 
-    const productsWithVariants = products.map((product) => {
-      const productVariants = variants.filter(
-        (variant) =>
-          variant.product.toString() === product._id.toString()
-      );
+    const productsWithVariants = products
+      .map((product) => {
+        const productVariants = variants.filter(
+          (variant) =>
+            variant.product.toString() === product._id.toString()
+        );
 
-      return {
-        ...product.toObject(),
-        variants: productVariants,
-      };
-    });
+        return {
+          ...product.toObject(),
+          variants: productVariants,
+        };
+      })
+      // Only keep products having at least one variant in stock
+      .filter((product) =>
+        product.variants.some((variant) => variant.stock > 0)
+      );
 
     return res.status(200).json({
       success: true,
       data: productsWithVariants,
     });
+
   } catch (error) {
     console.error(error);
 
