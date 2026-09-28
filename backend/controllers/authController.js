@@ -14,7 +14,7 @@ export const register = async (req,res) => {
       
     } = req.body;
 
-    // 1. Validate input
+    
 if (!phone ||!role  || !name || !email || !password) {
       return res.status(400).json({
         success: false,
@@ -22,11 +22,10 @@ if (!phone ||!role  || !name || !email || !password) {
       });
     }
 
-    // 2. Normalize input
     const normalizedEmail = email.toLowerCase().trim();
     const normalizedPhone=phone.trim();
 
-   { // 3. Check existing user
+   {
     const existingUser = await User.findOne({
       email: normalizedEmail,
     });
@@ -55,10 +54,10 @@ if (!phone ||!role  || !name || !email || !password) {
 }
     
 
-    // 5. Hash password
+   
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // // 6. Generate verification token
+    // // Generate verification token
     // const verificationToken = crypto
     //   .randomBytes(32)
     //   .toString("hex");
@@ -93,14 +92,13 @@ if (!phone ||!role  || !name || !email || !password) {
     });
 
     
-    // 9. Send verification email
+    // Send verification email
     // await sendVerificationEmail(
     //   normalizedEmail,
     //   verificationToken,
     //   frontendUrl,
     // );
 
-    // 10. Response
     return res.status(201).json({
       success: true,
       message:

@@ -36,7 +36,11 @@ const authentication = async (req, res, next) => {
     const decode = jwt.verify(token, process.env.JWT_SECRET);
 
     //To confirm the user really exist
-    /*Even if a user provides a valid token, you must verify them against the database because a JSON Web Token (JWT) is stateless and self-contained. Once issued, it cannot be changed or instantly revoked from the server side until it expires naturally.Checking the database on every request prevents several critical security risks: */
+    /*Even if a user provides a valid token, you must verify them against the
+     database because a JSON Web Token (JWT) is stateless and self-contained.
+      Once issued, it cannot be changed or instantly revoked from the server
+       side until it expires naturally.Checking the database on every request
+        prevents several critical security risks: */
     const user = await User.findById(decode.userId);
 
     if (!user) {

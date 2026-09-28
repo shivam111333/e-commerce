@@ -52,7 +52,6 @@ export const getAllVendor=async(req,res)=>{
     }
 }
 
-
 export const updateUserStatus=async(req,res)=>{
     try{
        

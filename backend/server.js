@@ -18,7 +18,7 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-connectionDb();
+
 
 app.use("/api/category", categoryRoutes);
 app.use("/api/auth", authRoutes);
@@ -31,9 +31,10 @@ app.use('/api/order',orderRoutes)
 app.use('/api/admin',adminRoutes);
 
 
-
+connectionDb()
 
 const PORT =process.env.PORT || 3000 
+
 app.listen(PORT, () => {
   console.log(`Server is on port ${PORT}`);
 });

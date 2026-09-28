@@ -201,11 +201,13 @@ export const updateCartItem = async (req, res) => {
     });
   }
 };
+
+
 export const deleteCartItem = async (req, res) => {
   try {
     const { variant } = req.params;
 
-    // Validate variant ID
+   
     if (!variant) {
       return res.status(400).json({
         success: false,
@@ -213,7 +215,6 @@ export const deleteCartItem = async (req, res) => {
       });
     }
 
-    // Find user's cart
     const cart = await Cart.findOne({
       user: req.user._id,
     });
@@ -238,7 +239,7 @@ export const deleteCartItem = async (req, res) => {
       });
     }
 
-    // Remove item
+  
     cart.items.splice(itemIndex, 1);
 
     await cart.save();
