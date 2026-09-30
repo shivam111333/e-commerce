@@ -2,30 +2,47 @@ import Product from "../models/productSchema.js";
 import Variant from "../models/variantSchema.js";
 // import Category from '../models/categorySchema.js'
 import Subcategory from '../models/subcategorySchema.js'
+import User from '../models/userSchema.js'
 
 export const getProduct = async (req, res) => {
   try {
-    const products = await Product.aggregate([
+    // 1. Find active vendors
+    const activeVendors = await User.find(
       {
-        $lookup: {
-          from: "variants",
-          localField: "_id",
-          foreignField: "product",
-          as: "variants",
-        },
+        role: "vendor",
+        status: "active",
       },
-      {
-        $match: {
-          variants: {
-            $elemMatch: {
-              stock: { $gt: 0 },
-            },
-          },
-        },
-      },
-    ]);
+      "_id"
+    );
 
-    if (products.length === 0) {
+    const activeVendorIds = activeVendors.map(
+      (vendor) => vendor._id
+    );
+
+    // 2. Find products belonging to active vendors
+    const products = await Product.find({
+      vendor: { $in: activeVendorIds },
+    });
+
+    // 3. Get variants
+    const productsWithVariants = [];
+
+    for (const product of products) {
+      const variants = await Variant.find({
+        product: product._id,
+        stock: { $gt: 0 },
+      });
+
+      // Only include products that have stock
+      if (variants.length > 0) {
+        productsWithVariants.push({
+          ...product.toObject(),
+          variants,
+        });
+      }
+    }
+
+    if (productsWithVariants.length === 0) {
       return res.status(404).json({
         success: false,
         message: "Product Not Found",
@@ -34,7 +51,7 @@ export const getProduct = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      data: products,
+      data: productsWithVariants,
     });
   } catch (err) {
     return res.status(500).json({

@@ -51,6 +51,7 @@ function VendorsSection() {
              : user
          )
        );
+   toast.success("Vendor status updated successfully");
  
         }catch(err)
         {

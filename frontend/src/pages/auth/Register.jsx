@@ -435,8 +435,7 @@ function Register() {
                 onClick={() =>
                   setShow((prev) => ({
                     ...prev,
-                    confirmPassword:
-                      !prev.confirmPassword,
+                    confirmPassword:!prev.confirmPassword,
                   }))
                 }
               >

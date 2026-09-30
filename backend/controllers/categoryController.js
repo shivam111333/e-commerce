@@ -129,13 +129,12 @@ export const getProductsByCategory = async (req, res) => {
   try {
     const { categoryId } = req.params;
 
-    console.log("CATEGORY ID:", categoryId);
-
     const products = await Product.find({
       category: categoryId,
     })
       .populate("category", "name")
-      .populate("subcategory", "name");
+      .populate("subcategory", "name")
+      .populate("vendor", "status");
 
     if (products.length === 0) {
       return res.status(200).json({
@@ -144,14 +143,20 @@ export const getProductsByCategory = async (req, res) => {
       });
     }
 
-    const productIds = products.map((product) => product._id);
+    // Keep only products whose vendor is active
+    const activeVendorProducts = products.filter(
+      (product) => product.vendor?.status === "active"
+    );
 
-    // Get all variants for these products
+    const productIds = activeVendorProducts.map(
+      (product) => product._id
+    );
+
     const variants = await Variant.find({
       product: { $in: productIds },
     });
 
-    const productsWithVariants = products
+    const productsWithVariants = activeVendorProducts
       .map((product) => {
         const productVariants = variants.filter(
           (variant) =>
@@ -163,7 +168,6 @@ export const getProductsByCategory = async (req, res) => {
           variants: productVariants,
         };
       })
-      // Only keep products having at least one variant in stock
       .filter((product) =>
         product.variants.some((variant) => variant.stock > 0)
       );
@@ -172,9 +176,8 @@ export const getProductsByCategory = async (req, res) => {
       success: true,
       data: productsWithVariants,
     });
-
   } catch (error) {
-    console.error(error);
+    console.error("GET PRODUCTS BY CATEGORY ERROR:", error);
 
     return res.status(500).json({
       success: false,

@@ -80,22 +80,7 @@ const Login = () => {
       const data = response.data;
   
 
-      /*
-        Expected backend response:
-
-        {
-          success: true,
-          message: "Login successful",
-          token: "...",
-          user: {
-            id: "...",
-            name: "...",
-            email: "...",
-            role: "vendor"
-          }
-        }
-
-      */
+      
      dispatch(login({
          id: data.user.id,
     name: data.user.name,
@@ -110,8 +95,7 @@ const Login = () => {
       
         
       //  console.log(data.user.role)
-      // REDIRECT BASED ON ROLE (FIXED)
-      // =========================
+     
 
       if (data.user.role === "admin") {
         navigate("/admin/dashboard/");

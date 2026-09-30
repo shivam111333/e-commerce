@@ -21,10 +21,7 @@ function Navbar() {
 
 
   const [searchQuery, setSearchQuery] = useState("");
-  const cartCount = cartItems.reduce(
-  (total, item) => total + (item.quantity || 0),
-  0
-);
+  const cartCount = cartItems.length;
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
