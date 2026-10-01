@@ -4,6 +4,15 @@ import Product from "../models/productSchema.js";
 import Variant from "../models/variantSchema.js";
 import Cart from "../models/cartSchema.js"
 
+// ==========================================
+// UTILITY: Generate unique order number
+// ==========================================
+const generateOrderNumber = () => {
+  const timestamp = Date.now().toString().slice(-8);
+  const random = Math.random().toString(36).toUpperCase();
+  return `ORD-${timestamp}-${random}`;
+};
+
 export const getOrderByUserId = async (req, res) => {
   try {
     const userId = req.user._id;
@@ -16,7 +25,6 @@ export const getOrderByUserId = async (req, res) => {
     }
 
     const orders = await Order.find({ user: userId })
-      
 
     if (orders.length === 0) {
       return res.status(404).json({
@@ -42,7 +50,7 @@ export const getOrderByUserId = async (req, res) => {
 
 export const createUserOrder = async (req, res) => {
   try {
-    const { items, shippingAddress } = req.body;
+    const { items, shippingAddress, paymentMethod } = req.body;
     const userId = req.user._id;
 
     // Check user
@@ -74,6 +82,17 @@ export const createUserOrder = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Complete shipping address is required",
+      });
+    }
+
+    // Validate payment method
+    const validPaymentMethods = ["cod", "card", "upi"];
+    const method = paymentMethod || "cod";
+
+    if (!validPaymentMethods.includes(method)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid payment method",
       });
     }
 
@@ -129,7 +148,7 @@ export const createUserOrder = async (req, res) => {
           ? Object.fromEntries(variant.attributes.entries())
           : variant.attributes || {};
 
-      // Create order item snapshot
+      // Create order item snapshot with NEW fields
       processedItems.push({
         variant: variant._id,
         vendor: product.vendor,
@@ -138,6 +157,7 @@ export const createUserOrder = async (req, res) => {
         quantity: item.quantity,
         attributes: attributes,
         status: "pending",
+        paymentStatus: "pending", // ADD: Per-item payment status
       });
 
       // Reduce stock
@@ -146,14 +166,12 @@ export const createUserOrder = async (req, res) => {
       await variant.save();
     }
 
-    // Create complete order
+    // Create complete order with NEW structure
     const order = await Order.create({
+      orderNumber: generateOrderNumber(), // ADD: Unique order number
       user: userId,
-
       items: processedItems,
-
       totalAmount: totalAmount,
-
       shippingAddress: {
         name: shippingAddress.name,
         phone: shippingAddress.phone,
@@ -162,16 +180,16 @@ export const createUserOrder = async (req, res) => {
         state: shippingAddress.state,
         pincode: shippingAddress.pincode,
       },
-
-      status: "pending",
-
-      paymentStatus: "pending",
+      payment: { // NEW: Nested payment object
+        method: method,
+        status: "pending",
+      },
     });
 
     await Cart.findOneAndUpdate(
-  { user: userId },
-  { $set: { items: [] } }
-);
+      { user: userId },
+      { $set: { items: [] } }
+    );
 
     return res.status(201).json({
       success: true,
@@ -188,7 +206,6 @@ export const createUserOrder = async (req, res) => {
   }
 };
 
-
 export const getVendorOrders = async (req, res) => {
   try {
     const vendorId = req.user._id;
@@ -200,8 +217,7 @@ export const getVendorOrders = async (req, res) => {
       });
     }
 
-    // Find orders which contain at least one item
-    // belonging to this vendor
+    // Find orders which contain at least one item belonging to this vendor
     const orders = await Order.find({
       "items.vendor": vendorId,
     })
@@ -231,11 +247,12 @@ export const getVendorOrders = async (req, res) => {
 
       return {
         _id: order._id,
+        orderNumber: order.orderNumber, // ADD: Order number
         user: order.user,
         items: vendorItems,
         vendorTotal,
         shippingAddress: order.shippingAddress,
-        paymentStatus: order.paymentStatus,
+        payment: order.payment, // CHANGED: From paymentStatus to payment object
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
       };
@@ -273,6 +290,7 @@ export const updateVendorOrderItemStatus = async (req, res) => {
       });
     }
 
+    // UPDATED: Add new statuses
     const allowedStatuses = [
       "pending",
       "confirmed",
@@ -281,12 +299,14 @@ export const updateVendorOrderItemStatus = async (req, res) => {
       "cancelled",
     ];
 
-    if (!allowedStatuses.includes(status)) {
+    if (status && !allowedStatuses.includes(status)) {
       return res.status(400).json({
         success: false,
         message: "Invalid order status",
       });
     }
+
+    
 
     const order = await Order.findById(orderId);
 
@@ -306,8 +326,7 @@ export const updateVendorOrderItemStatus = async (req, res) => {
       });
     }
 
-    // Security check:
-    // Vendor can modify only their own item.
+    // Security check: Vendor can modify only their own item
     if (
       item.vendor.toString() !==
       vendorId.toString()
@@ -337,15 +356,17 @@ export const updateVendorOrderItemStatus = async (req, res) => {
       });
     }
 
-    // Cannot move backwards
+    
     const statusOrder = {
       pending: 1,
       confirmed: 2,
+      
       shipped: 3,
       delivered: 4,
     };
 
     if (
+      status &&
       status !== "cancelled" &&
       statusOrder[status] < statusOrder[item.status]
     ) {
@@ -356,45 +377,48 @@ export const updateVendorOrderItemStatus = async (req, res) => {
       });
     }
 
-    // -------------------------------
-    // CANCELLATION
-    // -------------------------------
+    // ===================================
+    // UPDATE STATUS
+    // ===================================
 
-    if (status === "cancelled") {
-      if (!cancellationReason?.trim()) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Cancellation reason is required",
-        });
+    if (status) {
+      if (status === "cancelled") {
+        if (!cancellationReason?.trim()) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Cancellation reason is required",
+          });
+        }
+
+        // Restore stock
+        const variant = await Variant.findById(
+          item.variant
+        );
+
+        if (!variant) {
+          return res.status(404).json({
+            success: false,
+            message:
+              "Variant associated with this order item was not found",
+          });
+        }
+
+        variant.stock += item.quantity;
+
+        await variant.save();
+
+        item.status = "cancelled";
+        item.cancellationReason =
+          cancellationReason.trim();
+        item.cancelledAt = new Date();
+      } else {
+        // Normal status update
+        item.status = status;
       }
-
-      // Restore stock
-      const variant = await Variant.findById(
-        item.variant
-      );
-
-      if (!variant) {
-        return res.status(404).json({
-          success: false,
-          message:
-            "Variant associated with this order item was not found",
-        });
-      }
-
-      variant.stock += item.quantity;
-
-      await variant.save();
-
-      item.status = "cancelled";
-      item.cancelledBy = "vendor";
-      item.cancellationReason =
-        cancellationReason.trim();
-      item.cancelledAt = new Date();
-    } else {
-      // Normal status update
-      item.status = status;
     }
+
+    
 
     await order.save();
 
@@ -403,7 +427,7 @@ export const updateVendorOrderItemStatus = async (req, res) => {
       message:
         status === "cancelled"
           ? "Order item cancelled successfully"
-          : "Order item status updated successfully",
+          : "Order item updated successfully",
       data: order,
     });
   } catch (err) {
@@ -416,31 +440,168 @@ export const updateVendorOrderItemStatus = async (req, res) => {
   }
 };
 
-export const getAllOrder =async(req,res)=>{
-   try{
-        const user=req.user._id
-       if(!user)
-       {
-        return res.status(400).json({
-          success:false,
-          message:"User id is required"
-        })
-       }
+export const getAllOrder = async (req, res) => {
+  try {
+    const user = req.user._id;
 
-        const orders=await Order.find();
-
-        return res.status(200).json({
-          success:true,
-          data:orders
-        })
-
-   }catch(err)
-   {
-    return res.status(500).json({
-       success:false,
-       message:err.message
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: "User id is required"
+      });
     }
 
-    )
-   }
-}
+    const orders = await Order.find()
+
+    return res.status(200).json({
+      success: true,
+      data: orders
+    });
+
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: err.message
+    });
+  }
+};
+
+export const updateOrderPaymentStatus = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { paymentStatus } = req.body;
+
+    if (!orderId) {
+      return res.status(400).json({
+        success: false,
+        message: "Order ID is required",
+      });
+    }
+
+    const allowedPaymentStatuses = [
+      "pending",
+      "processing",
+      "paid",
+      "failed",
+      "partially_refunded",
+      "refunded",
+    ];
+
+    if (!allowedPaymentStatuses.includes(paymentStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid payment status",
+      });
+    }
+
+    const order = await Order.findById(orderId);
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    // Admin can manually change payment status
+    // only for COD orders.
+    if (order.payment.method !== "cod") {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Payment status for card and UPI orders is controlled by the payment gateway",
+      });
+    }
+
+    order.payment.status = paymentStatus;
+
+    await order.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Order payment status updated successfully",
+      data: order,
+    });
+  } catch (err) {
+    console.error(err);
+
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+};
+
+
+export const updateOrderItemPaymentStatus = async (req, res) => {
+  try {
+    const { orderId, itemId } = req.params;
+    const { paymentStatus } = req.body;
+
+    if (!orderId || !itemId) {
+      return res.status(400).json({
+        success: false,
+        message: "Order ID and item ID are required",
+      });
+    }
+
+    const allowedPaymentStatuses = [
+      "pending",
+      "paid",
+      "failed",
+      "partially_refunded",
+      "refunded",
+    ];
+
+    if (!allowedPaymentStatuses.includes(paymentStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid payment status",
+      });
+    }
+
+    const order = await Order.findById(orderId);
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    // Only COD can be manually controlled by admin
+    if (order.payment.method !== "cod") {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Payment status for card and UPI orders is controlled by the payment gateway",
+      });
+    }
+
+    const item = order.items.id(itemId);
+
+    if (!item) {
+      return res.status(404).json({
+        success: false,
+        message: "Order item not found",
+      });
+    }
+
+    item.paymentStatus = paymentStatus;
+
+    await order.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Order item payment status updated successfully",
+      data: order,
+    });
+  } catch (err) {
+    console.error(err);
+
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
+  }
+};

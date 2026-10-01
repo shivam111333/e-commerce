@@ -5,13 +5,13 @@ import { toast } from "react-toastify";
 import { useSelector } from "react-redux";
 import api from "../../api/axios.jsx";
 import { clearCart } from "../../redux/slices/cartSlice";
-import {useDispatch } from "react-redux";
+import { useDispatch } from "react-redux";
 
 
 function Checkout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const dispatch=useDispatch()
+  const dispatch = useDispatch();
 
   const { isAuthenticated } = useSelector((state) => state.auth);
 
@@ -32,6 +32,9 @@ function Checkout() {
 
   const [loading, setLoading] = useState(true);
   const [placingOrder, setPlacingOrder] = useState(false);
+
+  // ADD: Payment method state
+  const [paymentMethod, setPaymentMethod] = useState("cod");
 
   const [shippingAddress, setShippingAddress] = useState({
     name: "",
@@ -103,7 +106,6 @@ function Checkout() {
           navigate("/cart");
           return;
         }
-       
 
         setItems(cartItems);
       } catch (error) {
@@ -184,6 +186,12 @@ function Checkout() {
       return;
     }
 
+    // NEW: Validate payment method
+    if (!paymentMethod) {
+      toast.error("Please select a payment method.");
+      return;
+    }
+
     // --------------------------------------
     // Check stock
     // --------------------------------------
@@ -227,6 +235,7 @@ function Checkout() {
           state: state.trim(),
           pincode: pincode.trim(),
         },
+        paymentMethod: paymentMethod, // ADD: Send payment method
       };
 
       console.log("Creating order:", orderData);
@@ -240,7 +249,7 @@ function Checkout() {
 
       toast.success("Order placed successfully!");
 
-       if (!isBuyNow) {
+      if (!isBuyNow) {
         dispatch(clearCart());
       }
 
@@ -410,6 +419,39 @@ function Checkout() {
               </div>
 
               {/* =================================
+                  PAYMENT METHOD (NEW)
+              ================================= */}
+
+              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+                <h2 className="text-xl font-semibold text-gray-900 mb-5">
+                  Payment Method
+                </h2>
+
+                <div className="space-y-3">
+                  {[
+                    { value: "cod", label: "💳 Cash on Delivery", desc: "Pay when you receive your order" },
+                    { value: "card", label: "🏦 Debit/Credit Card", desc: "Secure payment" },
+                    { value: "upi", label: "📱 UPI", desc: "Pay using any UPI app" },
+                  ].map((method) => (
+                    <label key={method.value} className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-blue-50 transition">
+                      <input
+                        type="radio"
+                        name="paymentMethod"
+                        value={method.value}
+                        checked={paymentMethod === method.value}
+                        onChange={(e) => setPaymentMethod(e.target.value)}
+                        className="mt-1"
+                      />
+                      <div>
+                        <p className="font-medium text-gray-800">{method.label}</p>
+                        <p className="text-sm text-gray-500">{method.desc}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* =================================
                   ORDER ITEMS
               ================================= */}
 
@@ -543,7 +585,6 @@ function Checkout() {
                   {placingOrder ? "Placing Order..." : "Place Order"}
                 </button>
 
-               
               </div>
             </div>
           </div>

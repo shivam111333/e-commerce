@@ -431,9 +431,8 @@ const [cart, setCart] = useState(null);
             })}
           </div>
 
-          {/* =========================
-              ORDER SUMMARY
-          ========================= */}
+         
+        
 
           <div className="lg:col-span-1">
             <div className="bg-white rounded-xl border border-gray-200 p-6 sticky top-24">

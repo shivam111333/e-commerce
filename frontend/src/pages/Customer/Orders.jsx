@@ -23,31 +23,30 @@ function Orders() {
       return;
     }
     const fetchOrders = async () => {
-    try {
-      setLoading(true);
+      try {
+        setLoading(true);
 
-      const response = await api.get("/order/my-orders");
+        const response = await api.get("/order/my-orders");
+        console.log(response.data.data)
 
-      if (response.data.success) {
-        setOrders(response.data.data || []);
+        if (response.data.success) {
+          setOrders(response.data.data || []);
+        }
+      } catch (error) {
+        if (error.response?.status === 404) {
+          setOrders([]);
+        } else {
+          toast.error(
+            error.response?.data?.message || "Failed to fetch orders"
+          );
+        }
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      if (error.response?.status === 404) {
-        setOrders([]);
-      } else {
-        toast.error(
-          error.response?.data?.message || "Failed to fetch orders"
-        );
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
 
     fetchOrders();
   }, [isAuthenticated, navigate]);
-
- 
 
   const formatDate = (date) => {
     return new Date(date).toLocaleDateString("en-IN", {
@@ -57,6 +56,7 @@ function Orders() {
     });
   };
 
+  // UPDATED: Add new statuses
   const getStatusClass = (status) => {
     switch (status) {
       case "pending":
@@ -65,14 +65,37 @@ function Orders() {
       case "confirmed":
         return "bg-blue-100 text-blue-700";
 
+
+
       case "shipped":
         return "bg-purple-100 text-purple-700";
+
 
       case "delivered":
         return "bg-green-100 text-green-700";
 
       case "cancelled":
         return "bg-red-100 text-red-700";
+
+      default:
+        return "bg-gray-100 text-gray-700";
+    }
+  };
+
+  // NEW: Payment status styling
+  const getPaymentStatusClass = (status) => {
+    switch (status) {
+      case "paid":
+        return "bg-green-100 text-green-700";
+
+      case "failed":
+        return "bg-red-100 text-red-700";
+
+      case "refunded":
+        return "bg-orange-100 text-orange-700";
+
+      case "partially_refunded":
+        return "bg-yellow-100 text-yellow-700";
 
       default:
         return "bg-gray-100 text-gray-700";
@@ -148,11 +171,12 @@ function Orders() {
 
                     <div>
                       <p className="text-sm text-gray-500">
-                        Order ID
+                        Order Number
                       </p>
 
+                      {/* UPDATED: Show orderNumber instead of _id */}
                       <p className="font-semibold text-gray-800">
-                        #{order._id}
+                        {order.orderNumber}
                       </p>
                     </div>
 
@@ -168,19 +192,26 @@ function Orders() {
 
                     <div>
                       <p className="text-sm text-gray-500">
-                        Payment
+                        Payment Method
                       </p>
 
+                      {/* NEW: Show payment method */}
+                      <p className="font-medium text-gray-800">
+                        {order.payment?.method?.toUpperCase() || "N/A"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-sm text-gray-500">
+                        Payment Status
+                      </p>
+
+                      {/* UPDATED: Access nested payment.status */}
                       <span
-                        className={`inline-block mt-1 px-3 py-1 rounded-full text-sm font-medium ${
-                          order.paymentStatus === "paid"
-                            ? "bg-green-100 text-green-700"
-                            : order.paymentStatus === "failed"
-                            ? "bg-red-100 text-red-700"
-                            : "bg-yellow-100 text-yellow-700"
-                        }`}
+                        className={`inline-block mt-1 px-3 py-1 rounded-full text-sm font-medium ${getPaymentStatusClass(order.payment?.status)
+                          }`}
                       >
-                        {order.paymentStatus}
+                        {order.payment?.status || "N/A"}
                       </span>
                     </div>
 
@@ -216,6 +247,9 @@ function Orders() {
 
                           {/* Product Info */}
                           <div className="flex-1">
+                            <h3 className="font-semibold text-gray-800 text-lg">
+                              {item._id}
+                            </h3>
 
                             <h3 className="font-semibold text-gray-800 text-lg">
                               {item.name}
@@ -245,10 +279,6 @@ function Orders() {
                               Quantity: {item.quantity}
                             </div>
 
-                            {/* <div className="text-sm text-gray-500">
-                              Vendor: {item.vendor}
-                            </div> */}
-
                           </div>
 
                           {/* Price + Status */}
@@ -268,6 +298,8 @@ function Orders() {
                               total
                             </p>
 
+                            {/* Order Status */}
+                            <p className="text-xs text-gray-500 mb-1">Dilvery Status:</p>
                             <span
                               className={`inline-block mt-3 px-3 py-1 rounded-full text-sm font-medium capitalize ${getStatusClass(
                                 item.status
@@ -276,11 +308,20 @@ function Orders() {
                               {item.status}
                             </span>
 
+                            {/* NEW: Item Payment Status */}
+                            <div className="mt-2">
+                              <p className="text-xs text-gray-500 mb-1">Item Payment:</p>
+                              <span
+                                className={`inline-block px-2 py-1 rounded text-xs font-medium ${getPaymentStatusClass(item.paymentStatus)
+                                  }`}
+                              >
+                                {item.paymentStatus}
+                              </span>
+                            </div>
+
                             {item.status === "cancelled" && (
-                              <div className="mt-2 text-sm text-red-600">
-                                <p>
-                                  Cancelled by: {item.cancelledBy}
-                                </p>
+                              <div className="mt-3 text-sm text-red-600 border-t pt-2">
+                                <p className="font-medium">Cancelled</p>
 
                                 {item.cancellationReason && (
                                   <p>

@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 const orderItemSchema = new mongoose.Schema(
   {
+   
     variant: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Variant",
@@ -12,6 +13,7 @@ const orderItemSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
+      index: true,
     },
 
     // Product name at the time of purchase
@@ -34,13 +36,14 @@ const orderItemSchema = new mongoose.Schema(
       min: 1,
     },
 
-    // Snapshot of the selected variant's attributes
+    // Snapshot of variant attributes
     attributes: {
       type: Map,
       of: String,
       default: {},
     },
 
+    // Individual item order status
     status: {
       type: String,
       enum: [
@@ -53,10 +56,20 @@ const orderItemSchema = new mongoose.Schema(
       default: "pending",
     },
 
-    cancelledBy: {
+    // Individual item payment status
+    paymentStatus: {
       type: String,
-      enum: ["user", "vendor", "admin"],
+      enum: [
+        "pending",
+        "paid",
+        "failed",
+        "refunded",
+        "partially_refunded",
+      ],
+      default: "pending",
     },
+
+ 
 
     cancellationReason: {
       type: String,
@@ -74,6 +87,17 @@ const orderItemSchema = new mongoose.Schema(
 
 const orderSchema = new mongoose.Schema(
   {
+    // Customer-facing order number
+    orderNumber: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+    },
+
+  
+
+    // Customer
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -81,9 +105,11 @@ const orderSchema = new mongoose.Schema(
       index: true,
     },
 
+    // Products in this order
     items: {
       type: [orderItemSchema],
       required: true,
+
       validate: {
         validator: function (items) {
           return items.length > 0;
@@ -92,12 +118,41 @@ const orderSchema = new mongoose.Schema(
       },
     },
 
+    // Total order amount
     totalAmount: {
       type: Number,
       required: true,
       min: 0,
     },
 
+    // Central payment
+    payment: {
+      method: {
+        type: String,
+        enum: [
+          "cod",
+          "card",
+          "upi",
+          
+        ],
+        required: true,
+      },
+
+      status: {
+        type: String,
+        enum: [
+          "pending",
+          "processing",
+          "paid",
+          "failed",
+          "partially_refunded",
+          "refunded",
+        ],
+        default: "pending",
+      },
+    },
+
+    // Delivery address snapshot
     shippingAddress: {
       name: {
         type: String,
@@ -134,19 +189,6 @@ const orderSchema = new mongoose.Schema(
         required: true,
         trim: true,
       },
-    },
-
-    
-
-    paymentStatus: {
-      type: String,
-      enum: [
-        "pending",
-        "paid",
-        "failed",
-        "refunded",
-      ],
-      default: "pending",
     },
   },
   {
