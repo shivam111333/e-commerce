@@ -4,6 +4,8 @@ import Variant from "../models/variantSchema.js";
 import Subcategory from '../models/subcategorySchema.js'
 import User from '../models/userSchema.js'
 
+
+
 export const getProduct = async (req, res) => {
   try {
     // 1. Find active vendors
@@ -20,9 +22,7 @@ export const getProduct = async (req, res) => {
     );
 
     // 2. Find products belonging to active vendors
-    const products = await Product.find({
-      vendor: { $in: activeVendorIds },
-    });
+    const products = await Product.find();
 
     // 3. Get variants
     const productsWithVariants = [];
@@ -51,7 +51,7 @@ export const getProduct = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      data: productsWithVariants,
+      data: productsWithVariants
     });
   } catch (err) {
     return res.status(500).json({
@@ -59,7 +59,7 @@ export const getProduct = async (req, res) => {
       message: err.message,
     });
   }
-};
+}
 
 export const getProductById = async (req, res) => {
   try {

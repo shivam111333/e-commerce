@@ -24,7 +24,7 @@ export const getOrderByUserId = async (req, res) => {
       });
     }
 
-    const orders = await Order.find({ user: userId })
+    const orders = await Order.find({ user: userId }).sort({ createdAt: -1 });
 
     if (orders.length === 0) {
       return res.status(404).json({

@@ -58,8 +58,7 @@ function OrderSection() {
       case "shipped":
         return "bg-purple-100 text-purple-700";
 
-      case "out_for_delivery":
-        return "bg-cyan-100 text-cyan-700";
+    
 
       case "delivered":
         return "bg-green-100 text-green-700";
@@ -73,27 +72,7 @@ function OrderSection() {
   };
 
   // NEW: Payment status styling
-  const getPaymentStatusClass = (status) => {
-    switch (status) {
-      case "paid":
-        return "bg-green-100 text-green-700";
-
-      case "failed":
-        return "bg-red-100 text-red-700";
-
-      case "refunded":
-        return "bg-orange-100 text-orange-700";
-
-      case "partially_refunded":
-        return "bg-yellow-100 text-yellow-700";
-
-      case "processing":
-        return "bg-blue-100 text-blue-700";
-
-      default:
-        return "bg-gray-100 text-gray-700";
-    }
-  };
+  
 
   const updateGlobalPaymentStatus = async (
     orderId,

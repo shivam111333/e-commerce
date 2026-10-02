@@ -183,14 +183,10 @@ function VendorOrders() {
       case "confirmed":
         return "Confirmed";
 
-      case "processing":
-        return "Processing";
-
+      
       case "shipped":
         return "Shipped";
 
-      case "out_for_delivery":
-        return "Out for Delivery";
 
       case "delivered":
         return "Delivered";
@@ -692,18 +688,13 @@ function VendorOrders() {
                                   Confirmed
                                 </option>
 
-                                <option value="processing">
-                                  Processing
-                                </option>
+                             
 
                                 <option value="shipped">
                                   Shipped
                                 </option>
 
-                                <option value="out_for_delivery">
-                                  Out for Delivery
-                                </option>
-
+                          
                                 <option value="delivered">
                                   Delivered
                                 </option>

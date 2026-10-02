@@ -41,7 +41,7 @@ function Home() {
 
         if (selectedCategory === "all") {
           // Fetch all products
-          response = await api.get("/product");
+          response = await api.get("/product/");
         } else {
           // Fetch products for selected category
           response = await api.get(

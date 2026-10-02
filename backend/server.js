@@ -13,7 +13,17 @@ import cartRoutes from './routes/cartRoutes.js'
 import orderRoutes from './routes/orderRoutes.js'
 
 import adminRoutes from './routes/adminRoutes.js'
+import paymentRoutes from "./routes/paymentRoutes.js";
+
+
 const app = express();
+
+app.use(
+  "/api/razorpay/webhook",
+  express.raw({
+    type: "application/json",
+  })
+);
 
 app.use(express.json());
 app.use(cors());
@@ -29,6 +39,8 @@ app.use('/api/vendor',vendorRoutes)
 app.use('/api/cart',cartRoutes)
 app.use('/api/order',orderRoutes)
 app.use('/api/admin',adminRoutes);
+app.use("/api/payment", paymentRoutes);
+
 
 
 connectionDb()

@@ -150,75 +150,80 @@ function Checkout() {
   // PLACE ORDER
   // ==========================================
 
-  const handlePlaceOrder = async (e) => {
-    e.preventDefault();
 
-    // --------------------------------------
-    // Validate address
-    // --------------------------------------
-
-    const { name, phone, address, city, state, pincode } = shippingAddress;
-
-    if (
-      !name.trim() ||
-      !phone.trim() ||
-      !address.trim() ||
-      !city.trim() ||
-      !state.trim() ||
-      !pincode.trim()
-    ) {
-      toast.error("Please fill all shipping address fields.");
-      return;
-    }
-
-    if (phone.length < 10) {
-      toast.error("Please enter a valid phone number.");
-      return;
-    }
-
-    if (pincode.length !== 6) {
-      toast.error("Please enter a valid 6-digit pincode.");
-      return;
-    }
-
-    if (items.length === 0) {
-      toast.error("No items available for checkout.");
-      return;
-    }
-
-    // NEW: Validate payment method
-    if (!paymentMethod) {
-      toast.error("Please select a payment method.");
-      return;
-    }
-
-    // --------------------------------------
-    // Check stock
-    // --------------------------------------
-
-    for (const item of items) {
-      if (!item.variant) {
-        toast.error("Invalid product variant.");
-        return;
-      }
-
-      if (item.quantity > item.variant.stock) {
-        toast.error(
-          `${
-            item.variant.attributes?.Color || "Product"
-          } does not have enough stock.`,
-        );
-        return;
-      }
-    }
-
+  const handlePayment = async () => {
+    
     try {
       setPlacingOrder(true);
 
-      // --------------------------------------
-      // Send only IDs + quantity
-      // Backend should calculate prices
-      // --------------------------------------
+      // -----------------------------------------
+      // 1. Basic validation
+      // -----------------------------------------
+
+      const {
+        name,
+        phone,
+        address,
+        city,
+        state,
+        pincode,
+      } = shippingAddress;
+
+      if (
+        !name.trim() ||
+        !phone.trim() ||
+        !address.trim() ||
+        !city.trim() ||
+        !state.trim() ||
+        !pincode.trim()
+      ) {
+        toast.error("Please fill all shipping address fields.");
+        return;
+      }
+
+      if (phone.length < 10) {
+        toast.error("Please enter a valid phone number.");
+        return;
+      }
+
+      if (pincode.length !== 6) {
+        toast.error("Please enter a valid 6-digit pincode.");
+        return;
+      }
+
+      if (!items.length) {
+        toast.error("No items available for checkout.");
+        return;
+      }
+
+      // -----------------------------------------
+      // 2. Validate items
+      // -----------------------------------------
+
+      for (const item of items) {
+        if (!item.variant?._id) {
+          toast.error("Invalid product variant.");
+          return;
+        }
+
+        if (!item.quantity || item.quantity < 1) {
+          toast.error("Invalid quantity.");
+          return;
+        }
+
+        // This is only frontend validation.
+        // Backend MUST check stock again.
+        if (item.quantity > item.variant.stock) {
+          toast.error(
+            `${item.variant.attributes?.Color || "Product"} does not have enough stock.`
+          );
+          return;
+        }
+      }
+
+      // -----------------------------------------
+      // 3. Prepare order items
+      // -----------------------------------------
 
       const orderItems = items.map((item) => ({
         variant: item.variant._id,
@@ -227,6 +232,7 @@ function Checkout() {
 
       const orderData = {
         items: orderItems,
+
         shippingAddress: {
           name: name.trim(),
           phone: phone.trim(),
@@ -235,33 +241,216 @@ function Checkout() {
           state: state.trim(),
           pincode: pincode.trim(),
         },
-        paymentMethod: paymentMethod, // ADD: Send payment method
+
+        paymentMethod,
+      
       };
 
-      console.log("Creating order:", orderData);
+      // -----------------------------------------
+      // 4. COD
+      // -----------------------------------------
 
-      const response = await api.post("/order", orderData);
+      if (paymentMethod === "cod") {
+        const response = await api.post(
+          "/order",
+          orderData
+        );
 
-      if (!response.data?.success) {
-        toast.error(response.data?.message || "Failed to place order.");
+        if (!response.data?.success) {
+          toast.error(
+            response.data?.message ||
+            "Failed to place order."
+          );
+          return;
+        }
+
+        toast.success("Order placed successfully!");
+
+        // Cart checkout
+        if (!isBuyNow) {
+          dispatch(clearCart());
+        }
+
+        navigate("/orders");
         return;
       }
 
-      toast.success("Order placed successfully!");
+      // -----------------------------------------
+      // 5. CARD / UPI
+      // -----------------------------------------
 
-      if (!isBuyNow) {
-        dispatch(clearCart());
+      if (
+        paymentMethod === "card" ||
+        paymentMethod === "upi"
+      ) {
+        // ---------------------------------------
+        // Step 5A: Create Razorpay order
+        // ---------------------------------------
+
+        const razorpayResponse = await api.post(
+          "/payment/razorpay/order",
+          {
+            items: orderItems,
+          }
+        );
+
+        if (!razorpayResponse.data?.success) {
+          toast.error(
+            razorpayResponse.data?.message ||
+            "Unable to create payment."
+          );
+          return;
+        }
+
+        const razorpayOrder =
+          razorpayResponse.data.data;
+
+        // ---------------------------------------
+        // Step 5B: Open Razorpay Checkout
+        // ---------------------------------------
+
+        if (!window.Razorpay) {
+          toast.error(
+            "Razorpay Checkout is not loaded."
+          );
+          return;
+        }
+
+        const options = {
+          key: razorpayOrder.key,
+
+          amount: razorpayOrder.amount,
+
+          currency: razorpayOrder.currency,
+
+          name: "Your Ecommerce Store",
+
+          description: "Order Payment",
+
+          order_id: razorpayOrder.razorpayOrderId,
+
+          prefill: {
+            name: shippingAddress.name,
+            contact: shippingAddress.phone,
+          },
+
+          handler: async function (
+            paymentResponse
+          ) {
+            try {
+              // -----------------------------------
+              // Step 5C: Verify payment
+              // -----------------------------------
+
+              const verifyResponse =
+                await api.post(
+                  "/payment/razorpay/verify",
+                  {
+                    razorpay_order_id:
+                      paymentResponse.razorpay_order_id,
+
+                    razorpay_payment_id:
+                      paymentResponse.razorpay_payment_id,
+
+                    razorpay_signature:
+                      paymentResponse.razorpay_signature,
+
+                    // Send the original order data
+                    // so backend can create Order
+                    items: orderItems,
+
+                    shippingAddress:
+                      orderData.shippingAddress,
+
+                    paymentMethod:
+                      paymentMethod,
+                         isBuyNow,
+                  }
+                );
+
+              if (
+                !verifyResponse.data?.success
+              ) {
+                toast.error(
+                  verifyResponse.data?.message ||
+                  "Payment verification failed."
+                );
+                return;
+              }
+
+              toast.success(
+                "Payment successful! Order placed."
+              );
+
+              // -----------------------------------
+              // Clear cart only for cart checkout
+              // -----------------------------------
+
+              if (!isBuyNow) {
+                dispatch(clearCart());
+              }
+
+              navigate("/orders");
+            } catch (error) {
+              console.error(
+                "Payment verification error:",
+                error
+              );
+
+              toast.error(
+                error.response?.data?.message ||
+                "Payment verification failed."
+              );
+            } finally {
+              setPlacingOrder(false);
+            }
+          },
+
+          modal: {
+            ondismiss: function () {
+              setPlacingOrder(false);
+
+              toast.info(
+                "Payment was cancelled."
+              );
+            },
+          },
+
+          theme: {
+            color: "#3399cc",
+          },
+        };
+
+        const razorpay =
+          new window.Razorpay(options);
+
+        razorpay.open();
+
+        return;
       }
 
-      navigate("/orders");
+      toast.error("Invalid payment method.");
     } catch (error) {
-      console.error(error);
+      console.error(
+        "Payment error:",
+        error
+      );
 
-      toast.error(error.response?.data?.message || "Failed to place order.");
+      toast.error(
+        error.response?.data?.message ||
+        "Payment failed."
+      );
     } finally {
-      setPlacingOrder(false);
+      // Don't set false immediately for Razorpay
+      // because Razorpay is still open.
+      if (paymentMethod === "cod") {
+        setPlacingOrder(false);
+      }
     }
   };
+
+
+
 
   // ==========================================
   // LOADING
@@ -275,9 +464,6 @@ function Checkout() {
     );
   }
 
-  // ==========================================
-  // UI
-  // ==========================================
 
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4">
@@ -303,7 +489,11 @@ function Checkout() {
           </p>
         </div>
 
-        <form onSubmit={handlePlaceOrder}>
+        <form onSubmit={(e) => {
+          e.preventDefault();
+          handlePayment();
+        }}
+        >
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* =================================
                 LEFT
@@ -578,11 +768,16 @@ function Checkout() {
                 <button
                   type="submit"
                   disabled={placingOrder || items.length === 0}
+
                   className="w-full mt-6 bg-blue-600 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2 hover:bg-blue-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
                 >
                   <FaCheck />
 
-                  {placingOrder ? "Placing Order..." : "Place Order"}
+                {placingOrder
+    ? "Processing..."
+    : paymentMethod === "cod"
+    ? "Place Order"
+    : "Pay Now"}
                 </button>
 
               </div>
