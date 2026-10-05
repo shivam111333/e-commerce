@@ -18,15 +18,18 @@ import paymentRoutes from "./routes/paymentRoutes.js";
 
 const app = express();
 
+app.use(cors());
+
 app.use(
-  "/api/razorpay/webhook",
+  "/api/payment/razorpay/webhook",
   express.raw({
     type: "application/json",
   })
 );
 
 app.use(express.json());
-app.use(cors());
+
+
 
 
 

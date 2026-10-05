@@ -280,8 +280,8 @@ function Checkout() {
       // -----------------------------------------
 
       if (
-        paymentMethod === "card" ||
-        paymentMethod === "upi"
+        paymentMethod === "online" 
+    
       ) {
         // ---------------------------------------
         // Step 5A: Create Razorpay order
@@ -620,8 +620,8 @@ function Checkout() {
                 <div className="space-y-3">
                   {[
                     { value: "cod", label: "💳 Cash on Delivery", desc: "Pay when you receive your order" },
-                    { value: "card", label: "🏦 Debit/Credit Card", desc: "Secure payment" },
-                    { value: "upi", label: "📱 UPI", desc: "Pay using any UPI app" },
+                    { value: "online", label: "🏦 Debit/Credit Card/UPI/NetBanking", desc: "Secure payment" },
+                   
                   ].map((method) => (
                     <label key={method.value} className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-blue-50 transition">
                       <input

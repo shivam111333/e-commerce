@@ -86,7 +86,7 @@ export const createUserOrder = async (req, res) => {
     }
 
     // Validate payment method
-    const validPaymentMethods = ["cod", "card", "upi"];
+    const validPaymentMethods = ["cod", "online"];
     const method = paymentMethod || "cod";
 
     if (!validPaymentMethods.includes(method)) {
