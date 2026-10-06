@@ -101,8 +101,7 @@ export const createVariant = async (req, res) => {
         imageUrls.push(result.secure_url);
       }
     }
-      const duplicate = await Variant.findOne({
-     
+    const duplicate = await Variant.findOne({
       product,
       attributeKey,
     });
@@ -112,7 +111,7 @@ export const createVariant = async (req, res) => {
         success: false,
         message: "This variant combination already exists for this product",
       });
-    } 
+    }
     const variant = await Variant.create({
       product,
       price,
@@ -128,7 +127,6 @@ export const createVariant = async (req, res) => {
       data: variant,
     });
   } catch (err) {
-   
     console.log(err);
     return res.status(500).json({
       success: false,
@@ -164,19 +162,31 @@ export const updateVariant = async (req, res) => {
       });
     }
 
-    const product_exist = await Product.findById(product);
+    const existingVariant = await Variant.findById(id);
 
-    if (!product_exist) {
+    if (!existingVariant) {
       return res.status(404).json({
         success: false,
-        message: "Product not found",
+        message: "Variant not found",
       });
     }
 
-    if (product_exist.vendor.toString() !== req.user._id.toString()) {
+    const existingProduct = await Product.findOne({
+      _id: existingVariant.product,
+      vendor: req.user._id,
+    });
+
+    if (!existingProduct) {
       return res.status(403).json({
         success: false,
-        message: "You are not authorized to change this product",
+        message: "You are not authorized to change this variant",
+      });
+    }
+
+    if (existingVariant.product.toString() !== product.toString()) {
+      return res.status(400).json({
+        success: false,
+        message: "A variant cannot be moved to another product",
       });
     }
 
@@ -195,11 +205,11 @@ export const updateVariant = async (req, res) => {
 
     const duplicate = await Variant.findOne({
       _id: { $ne: id },
-      
+
       product,
       attributeKey,
     });
-console.log("Duplicate match:", duplicate);
+    console.log("Duplicate match:", duplicate);
     if (duplicate) {
       return res.status(409).json({
         success: false,
@@ -207,8 +217,8 @@ console.log("Duplicate match:", duplicate);
       });
     }
 
-    const variant = await Variant.findByIdAndUpdate(
-      id,
+    const variant = await Variant.findOneAndUpdate(
+      { _id: id, product: existingVariant.product },
       {
         product,
         price,
@@ -235,7 +245,6 @@ console.log("Duplicate match:", duplicate);
       data: variant,
     });
   } catch (err) {
-   
     return res.status(500).json({
       success: false,
       message: err.message,
@@ -257,7 +266,7 @@ export const deleteVariant = async (req, res) => {
         message: "Variant not found",
       });
     }
-    const product =await Product.findById(variant.product);
+    const product = await Product.findById(variant.product);
     if (!product) {
       return res.status(404).json({ message: "Product not found" });
     }
@@ -267,7 +276,7 @@ export const deleteVariant = async (req, res) => {
       });
     }
     await Variant.findByIdAndDelete(id);
-    
+
     return res.status(200).json({ message: "Successfuly Deleted" });
   } catch (err) {
     res.status(500).json({

@@ -6,7 +6,7 @@ export const getAllUser=async(req,res)=>{
 
         const user=await User.find({
            role:"user"
-        })
+        }).select('-password')
 
          if(user.length==0)
          {
@@ -33,7 +33,7 @@ export const getAllVendor=async(req,res)=>{
 
         const vendor=await User.find({
            role:"vendor"
-        })
+        }).select('-password')
         if(vendor.length==0)
         {
             return res.json({
