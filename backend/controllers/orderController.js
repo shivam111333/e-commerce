@@ -1,18 +1,81 @@
 import Order from "../models/orderSchema.js";
-import User from "../models/userSchema.js";
 import Product from "../models/productSchema.js";
 import Variant from "../models/variantSchema.js";
-import Cart from "../models/cartSchema.js"
+import Cart from "../models/cartSchema.js";
+import Payment from "../models/paymentSchema.js";
 
 // ==========================================
-// UTILITY: Generate unique order number
+// UTILITIES
 // ==========================================
 const generateOrderNumber = () => {
   const timestamp = Date.now().toString().slice(-8);
-  const random = Math.random().toString(36).toUpperCase();
+  const random = Math.random().toString(36).slice(2, 8).toUpperCase();
   return `ORD-${timestamp}-${random}`;
 };
 
+// An order only counts as "placed" when it is cash on delivery, or an
+// online order that has actually been paid. Unpaid online checkouts must
+// never show up in customer, vendor or admin lists.
+const PLACED_ORDER_FILTER = {
+  $or: [{ "payment.method": "cod" }, { "payment.status": "paid" }],
+};
+
+const ADMIN_COD_STATUSES = ["pending", "paid", "failed"];
+
+/**
+ * Recalculates the order-level payment status from its items (COD only)
+ * and creates the cash Payment record when the order becomes fully paid.
+ * Call it after changing an item's paymentStatus, or after an item is
+ * cancelled, and then call order.save().
+ */
+export const syncCodOrderPayment = async (order) => {
+  const activeItems = order.items.filter((i) => i.status !== "cancelled");
+
+  // Everything cancelled: nothing left to collect
+  if (activeItems.length === 0) return;
+
+  const allPaid = activeItems.every((i) => i.paymentStatus === "paid");
+  const allFailed = activeItems.every((i) => i.paymentStatus === "failed");
+
+  let newStatus = "pending"; // mixed states stay pending
+  if (allPaid) newStatus = "paid";
+  else if (allFailed) newStatus = "failed";
+
+  if (newStatus === "paid" && order.payment.status !== "paid") {
+    // Cash actually collected = non-cancelled items only
+    const amount = activeItems.reduce(
+      (sum, i) => sum + i.price * i.quantity,
+      0
+    );
+
+    try {
+      await Payment.create({
+        user: order.user,
+        order: order._id,
+        // no razorpayOrderId / razorpayPaymentId for cash
+        method: "cash",
+        amount,
+        currency: "INR",
+        status: "captured",
+      });
+      console.log("COD cash Payment created for order", String(order._id));
+    } catch (err) {
+      // Ignore a duplicate-key error ONLY when a Payment for this order really
+      // exists. Any other duplicate-key error means an index problem.
+      if (err.code === 11000 && (await Payment.exists({ order: order._id }))) {
+        // already created: fine
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  order.payment.status = newStatus;
+};
+
+// ==========================================
+// CUSTOMER: my orders
+// ==========================================
 export const getOrderByUserId = async (req, res) => {
   try {
     const userId = req.user._id;
@@ -24,6 +87,9 @@ export const getOrderByUserId = async (req, res) => {
       });
     }
 
+    // The customer sees ALL their own orders, including online checkouts that
+    // are still unpaid or failed (the frontend labels them by payment.status).
+    // Vendors and admin still use PLACED_ORDER_FILTER.
     const orders = await Order.find({ user: userId }).sort({ createdAt: -1 });
 
     if (orders.length === 0) {
@@ -37,7 +103,6 @@ export const getOrderByUserId = async (req, res) => {
       success: true,
       data: orders,
     });
-
   } catch (err) {
     console.error(err);
 
@@ -48,12 +113,15 @@ export const getOrderByUserId = async (req, res) => {
   }
 };
 
+// ==========================================
+// CUSTOMER: place a CASH ON DELIVERY order
+// (online payments go through /api/payment/razorpay/order)
+// ==========================================
 export const createUserOrder = async (req, res) => {
   try {
-    const { items, shippingAddress, paymentMethod } = req.body;
+    const { items, shippingAddress, paymentMethod, isBuyNow } = req.body;
     const userId = req.user._id;
 
-    // Check user
     if (!userId) {
       return res.status(401).json({
         success: false,
@@ -61,7 +129,15 @@ export const createUserOrder = async (req, res) => {
       });
     }
 
-    // Check items
+    // This endpoint only creates COD orders. An "online" order created here
+    // would reduce stock without any payment.
+    if (paymentMethod && paymentMethod !== "cod") {
+      return res.status(400).json({
+        success: false,
+        message: "Online payments must use the online checkout",
+      });
+    }
+
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
         success: false,
@@ -69,7 +145,6 @@ export const createUserOrder = async (req, res) => {
       });
     }
 
-    // Check shipping address
     if (
       !shippingAddress ||
       !shippingAddress.name ||
@@ -85,31 +160,31 @@ export const createUserOrder = async (req, res) => {
       });
     }
 
-    // Validate payment method
-    const validPaymentMethods = ["cod", "online"];
-    const method = paymentMethod || "cod";
-
-    if (!validPaymentMethods.includes(method)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid payment method",
-      });
-    }
-
+    // ---- 1. Validate everything first (no stock is touched yet) ----
     const processedItems = [];
+    const seen = new Set();
     let totalAmount = 0;
 
-    // Process every order item
     for (const item of items) {
-      // Validate variant and quantity
-      if (!item.variant || !item.quantity || item.quantity < 1) {
+      const quantity = Number(item.quantity);
+
+      if (!item.variant || !Number.isInteger(quantity) || quantity < 1) {
         return res.status(400).json({
           success: false,
           message: "Invalid variant or quantity",
         });
       }
 
-      // Find variant
+      const key = String(item.variant);
+
+      if (seen.has(key)) {
+        return res.status(400).json({
+          success: false,
+          message: "The same variant cannot appear twice",
+        });
+      }
+      seen.add(key);
+
       const variant = await Variant.findById(item.variant);
 
       if (!variant) {
@@ -119,15 +194,13 @@ export const createUserOrder = async (req, res) => {
         });
       }
 
-      // Check stock
-      if (variant.stock < item.quantity) {
+      if (variant.stock < quantity) {
         return res.status(400).json({
           success: false,
           message: `Insufficient stock for ${item.variant}`,
         });
       }
 
-      // Find product
       const product = await Product.findById(variant.product);
 
       if (!product) {
@@ -137,59 +210,89 @@ export const createUserOrder = async (req, res) => {
         });
       }
 
-      // Calculate item total using backend price
-      const itemTotal = variant.price * item.quantity;
+      // Price always comes from the database, never from the browser
+      totalAmount += variant.price * quantity;
 
-      totalAmount += itemTotal;
-
-      // Convert Variant attributes Map into normal object
       const attributes =
         variant.attributes instanceof Map
           ? Object.fromEntries(variant.attributes.entries())
           : variant.attributes || {};
 
-      // Create order item snapshot with NEW fields
       processedItems.push({
         variant: variant._id,
         vendor: product.vendor,
         name: product.name,
         price: variant.price,
-        quantity: item.quantity,
-        attributes: attributes,
+        quantity,
+        attributes,
         status: "pending",
-        paymentStatus: "pending", // ADD: Per-item payment status
+        paymentStatus: "pending",
       });
-
-      // Reduce stock
-      variant.stock -= item.quantity;
-
-      await variant.save();
     }
 
-    // Create complete order with NEW structure
-    const order = await Order.create({
-      orderNumber: generateOrderNumber(), // ADD: Unique order number
-      user: userId,
-      items: processedItems,
-      totalAmount: totalAmount,
-      shippingAddress: {
-        name: shippingAddress.name,
-        phone: shippingAddress.phone,
-        address: shippingAddress.address,
-        city: shippingAddress.city,
-        state: shippingAddress.state,
-        pincode: shippingAddress.pincode,
-      },
-      payment: { // NEW: Nested payment object
-        method: method,
-        status: "pending",
-      },
-    });
+    // ---- 2. Reduce stock atomically; undo everything if anything fails ----
+    const reduced = [];
 
-    await Cart.findOneAndUpdate(
-      { user: userId },
-      { $set: { items: [] } }
-    );
+    const restoreStock = async () => {
+      for (const r of reduced) {
+        await Variant.updateOne(
+          { _id: r.variant },
+          { $inc: { stock: r.quantity } }
+        );
+      }
+    };
+
+    for (const item of processedItems) {
+      const result = await Variant.updateOne(
+        { _id: item.variant, stock: { $gte: item.quantity } },
+        { $inc: { stock: -item.quantity } }
+      );
+
+      if (result.modifiedCount === 0) {
+        await restoreStock();
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient stock for ${item.name}`,
+        });
+      }
+
+      reduced.push({ variant: item.variant, quantity: item.quantity });
+    }
+
+    // ---- 3. Create the order ----
+    let order;
+
+    try {
+      order = await Order.create({
+        orderNumber: generateOrderNumber(),
+        user: userId,
+        items: processedItems,
+        totalAmount,
+        shippingAddress: {
+          name: shippingAddress.name,
+          phone: shippingAddress.phone,
+          address: shippingAddress.address,
+          city: shippingAddress.city,
+          state: shippingAddress.state,
+          pincode: shippingAddress.pincode,
+        },
+        payment: {
+          method: "cod",
+          status: "pending",
+        },
+      });
+    } catch (err) {
+      await restoreStock();
+      throw err;
+    }
+
+    // Buy Now must not empty the cart
+    if (!isBuyNow) {
+      await Cart.findOneAndUpdate(
+        { user: userId },
+        { $set: { items: [] } }
+      );
+    }
 
     return res.status(201).json({
       success: true,
@@ -206,6 +309,9 @@ export const createUserOrder = async (req, res) => {
   }
 };
 
+// ==========================================
+// VENDOR: my orders
+// ==========================================
 export const getVendorOrders = async (req, res) => {
   try {
     const vendorId = req.user._id;
@@ -217,9 +323,11 @@ export const getVendorOrders = async (req, res) => {
       });
     }
 
-    // Find orders which contain at least one item belonging to this vendor
+    // Orders that contain at least one item belonging to this vendor
+    // (and are really placed: COD, or online and paid)
     const orders = await Order.find({
       "items.vendor": vendorId,
+      ...PLACED_ORDER_FILTER,
     })
       .populate("user", "name email phone")
       .sort({ createdAt: -1 });
@@ -234,25 +342,22 @@ export const getVendorOrders = async (req, res) => {
     // Only return this vendor's items
     const vendorOrders = orders.map((order) => {
       const vendorItems = order.items.filter(
-        (item) =>
-          item.vendor.toString() === vendorId.toString()
+        (item) => item.vendor.toString() === vendorId.toString()
       );
 
-      // Calculate only this vendor's total
       const vendorTotal = vendorItems.reduce(
-        (total, item) =>
-          total + item.price * item.quantity,
+        (total, item) => total + item.price * item.quantity,
         0
       );
 
       return {
         _id: order._id,
-        orderNumber: order.orderNumber, // ADD: Order number
+        orderNumber: order.orderNumber,
         user: order.user,
         items: vendorItems,
         vendorTotal,
         shippingAddress: order.shippingAddress,
-        payment: order.payment, // CHANGED: From paymentStatus to payment object
+        payment: order.payment,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
       };
@@ -272,15 +377,13 @@ export const getVendorOrders = async (req, res) => {
   }
 };
 
+// ==========================================
+// VENDOR: update one item's delivery status
+// ==========================================
 export const updateVendorOrderItemStatus = async (req, res) => {
   try {
     const { orderId, itemId } = req.params;
-
-    const {
-      status,
-      cancellationReason,
-    } = req.body;
-
+    const { status, cancellationReason } = req.body;
     const vendorId = req.user._id;
 
     if (!orderId || !itemId) {
@@ -290,7 +393,6 @@ export const updateVendorOrderItemStatus = async (req, res) => {
       });
     }
 
-    // UPDATED: Add new statuses
     const allowedStatuses = [
       "pending",
       "confirmed",
@@ -306,14 +408,20 @@ export const updateVendorOrderItemStatus = async (req, res) => {
       });
     }
 
-    
-
     const order = await Order.findById(orderId);
 
     if (!order) {
       return res.status(404).json({
         success: false,
         message: "Order not found",
+      });
+    }
+
+    // An unpaid online checkout is not a real order yet
+    if (order.payment.method === "online" && order.payment.status !== "paid") {
+      return res.status(400).json({
+        success: false,
+        message: "This order has not been paid yet",
       });
     }
 
@@ -326,41 +434,31 @@ export const updateVendorOrderItemStatus = async (req, res) => {
       });
     }
 
-    // Security check: Vendor can modify only their own item
-    if (
-      item.vendor.toString() !==
-      vendorId.toString()
-    ) {
+    // Vendor can modify only their own item
+    if (item.vendor.toString() !== vendorId.toString()) {
       return res.status(403).json({
         success: false,
-        message:
-          "You are not authorized to update this order item",
+        message: "You are not authorized to update this order item",
       });
     }
 
-    // Already delivered
     if (item.status === "delivered") {
       return res.status(400).json({
         success: false,
-        message:
-          "Delivered item cannot be updated",
+        message: "Delivered item cannot be updated",
       });
     }
 
-    // Already cancelled
     if (item.status === "cancelled") {
       return res.status(400).json({
         success: false,
-        message:
-          "Cancelled item cannot be updated",
+        message: "Cancelled item cannot be updated",
       });
     }
 
-    
     const statusOrder = {
       pending: 1,
       confirmed: 2,
-      
       shipped: 3,
       delivered: 4,
     };
@@ -372,29 +470,24 @@ export const updateVendorOrderItemStatus = async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-        message:
-          "Order status cannot move backwards",
+        message: "Order status cannot move backwards",
       });
     }
 
     // ===================================
     // UPDATE STATUS
     // ===================================
-
     if (status) {
       if (status === "cancelled") {
         if (!cancellationReason?.trim()) {
           return res.status(400).json({
             success: false,
-            message:
-              "Cancellation reason is required",
+            message: "Cancellation reason is required",
           });
         }
 
         // Restore stock
-        const variant = await Variant.findById(
-          item.variant
-        );
+        const variant = await Variant.findById(item.variant);
 
         if (!variant) {
           return res.status(404).json({
@@ -404,23 +497,36 @@ export const updateVendorOrderItemStatus = async (req, res) => {
           });
         }
 
-        variant.stock += item.quantity;
-
-        await variant.save();
+        await Variant.updateOne(
+          { _id: item.variant },
+          { $inc: { stock: item.quantity } }
+        );
 
         item.status = "cancelled";
-        item.cancellationReason =
-          cancellationReason.trim();
+        item.cancellationReason = cancellationReason.trim();
         item.cancelledAt = new Date();
       } else {
-        // Normal status update
         item.status = status;
       }
     }
 
-    
+    // COD: the remaining items may now all be paid
+    if (status === "cancelled" && order.payment.method === "cod") {
+      await syncCodOrderPayment(order);
+    }
 
     await order.save();
+
+    // Online and already paid: the customer must be refunded for this item
+    if (status === "cancelled" && order.payment.method === "online") {
+      await Payment.updateOne(
+        { order: order._id },
+        {
+          $set: { needsRefund: true },
+          $inc: { refundAmount: item.price * item.quantity },
+        }
+      );
+    }
 
     return res.status(200).json({
       success: true,
@@ -440,6 +546,9 @@ export const updateVendorOrderItemStatus = async (req, res) => {
   }
 };
 
+// ==========================================
+// ADMIN: all orders
+// ==========================================
 export const getAllOrder = async (req, res) => {
   try {
     const user = req.user._id;
@@ -447,25 +556,30 @@ export const getAllOrder = async (req, res) => {
     if (!user) {
       return res.status(400).json({
         success: false,
-        message: "User id is required"
+        message: "User id is required",
       });
     }
 
-    const orders = await Order.find()
+    const orders = await Order.find(PLACED_ORDER_FILTER).sort({
+      createdAt: -1,
+    });
 
     return res.status(200).json({
       success: true,
-      data: orders
+      data: orders,
     });
-
   } catch (err) {
     return res.status(500).json({
       success: false,
-      message: err.message
+      message: err.message,
     });
   }
 };
 
+/* =========================================================
+   ADMIN, order-level COD payment: sets every active item,
+   then syncs the order
+   ========================================================= */
 export const updateOrderPaymentStatus = async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -478,16 +592,7 @@ export const updateOrderPaymentStatus = async (req, res) => {
       });
     }
 
-    const allowedPaymentStatuses = [
-      "pending",
-      "processing",
-      "paid",
-      "failed",
-      "partially_refunded",
-      "refunded",
-    ];
-
-    if (!allowedPaymentStatuses.includes(paymentStatus)) {
+    if (!ADMIN_COD_STATUSES.includes(paymentStatus)) {
       return res.status(400).json({
         success: false,
         message: "Invalid payment status",
@@ -503,18 +608,57 @@ export const updateOrderPaymentStatus = async (req, res) => {
       });
     }
 
-    // Admin can manually change payment status
-    // only for COD orders.
+    // Admin can manually change payment status only for COD orders
     if (order.payment.method !== "cod") {
       return res.status(403).json({
         success: false,
         message:
-          "Payment status for card and UPI orders is controlled by the payment gateway",
+          "Payment status for online orders is controlled by the payment gateway",
       });
     }
 
-    order.payment.status = paymentStatus;
+    // Paid is final for now (no refund flow yet).
+    // Asking for "paid" again is harmless, so answer with success.
+    if (order.payment.status === "paid") {
+      if (paymentStatus === "paid") {
+        return res.status(200).json({
+          success: true,
+          message: "Order is already paid",
+          data: order,
+        });
+      }
 
+      return res.status(409).json({
+        success: false,
+        message: "This order is already paid and cannot be changed",
+      });
+    }
+
+    const activeItems = order.items.filter((i) => i.status !== "cancelled");
+
+    if (activeItems.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "All items in this order are cancelled",
+      });
+    }
+
+    // Cash is collected on delivery
+    if (
+      paymentStatus === "paid" &&
+      activeItems.some((i) => i.status !== "delivered")
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "All active items must be delivered before marking as paid",
+      });
+    }
+
+    activeItems.forEach((i) => {
+      i.paymentStatus = paymentStatus;
+    });
+
+    await syncCodOrderPayment(order);
     await order.save();
 
     return res.status(200).json({
@@ -532,7 +676,10 @@ export const updateOrderPaymentStatus = async (req, res) => {
   }
 };
 
-
+/* =========================================================
+   ADMIN, item-level COD payment: updates one item,
+   then syncs the order
+   ========================================================= */
 export const updateOrderItemPaymentStatus = async (req, res) => {
   try {
     const { orderId, itemId } = req.params;
@@ -545,15 +692,7 @@ export const updateOrderItemPaymentStatus = async (req, res) => {
       });
     }
 
-    const allowedPaymentStatuses = [
-      "pending",
-      "paid",
-      "failed",
-      "partially_refunded",
-      "refunded",
-    ];
-
-    if (!allowedPaymentStatuses.includes(paymentStatus)) {
+    if (!ADMIN_COD_STATUSES.includes(paymentStatus)) {
       return res.status(400).json({
         success: false,
         message: "Invalid payment status",
@@ -574,7 +713,22 @@ export const updateOrderItemPaymentStatus = async (req, res) => {
       return res.status(403).json({
         success: false,
         message:
-          "Payment status for card and UPI orders is controlled by the payment gateway",
+          "Payment status for online orders is controlled by the payment gateway",
+      });
+    }
+
+    if (order.payment.status === "paid") {
+      if (paymentStatus === "paid") {
+        return res.status(200).json({
+          success: true,
+          message: "Order is already paid",
+          data: order,
+        });
+      }
+
+      return res.status(409).json({
+        success: false,
+        message: "This order is already paid and cannot be changed",
       });
     }
 
@@ -587,8 +741,23 @@ export const updateOrderItemPaymentStatus = async (req, res) => {
       });
     }
 
+    if (item.status === "cancelled") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot change payment status of a cancelled item",
+      });
+    }
+
+    if (paymentStatus === "paid" && item.status !== "delivered") {
+      return res.status(400).json({
+        success: false,
+        message: "Item must be delivered before marking as paid",
+      });
+    }
+
     item.paymentStatus = paymentStatus;
 
+    await syncCodOrderPayment(order);
     await order.save();
 
     return res.status(200).json({

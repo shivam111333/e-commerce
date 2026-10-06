@@ -8,7 +8,7 @@ const paymentSchema = new mongoose.Schema(
       required: true,
     },
 
-    // One Payment per Order (also stops duplicate "mark as paid" records)
+    // One Payment per Order
     order: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Order",
@@ -17,7 +17,7 @@ const paymentSchema = new mongoose.Schema(
     },
 
     // Online payments only. For cash (COD) leave these two fields OUT
-    // (do not set them to null) so the sparse unique index ignores them.
+    // (never set them to null) so the sparse unique index ignores them.
     razorpayOrderId: {
       type: String,
       unique: true,
@@ -42,6 +42,7 @@ const paymentSchema = new mongoose.Schema(
       default: "INR",
     },
 
+    // Gateway-level status (never shown to customers)
     status: {
       type: String,
       enum: [
@@ -55,16 +56,32 @@ const paymentSchema = new mongoose.Schema(
       default: "pending",
     },
 
-    // "cash" for COD, or Razorpay's method (upi, card, netbanking, wallet, ...)
+    // "online" until payment succeeds, then Razorpay's real method
+    // (upi, card, netbanking, wallet, ...). "cash" for COD.
     method: {
       type: String,
     },
 
-    // COD only: the admin who marked it as paid
-    collectedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+    // Set exactly once, by whichever of verify / webhook gets there first.
+    // That caller reduces stock; the other one finds it already done.
+    finalizedAt: {
+      type: Date,
+      default: null,
     },
+
+    // Customer paid but some items were out of stock: admin must refund
+    needsRefund: {
+      type: Boolean,
+      default: false,
+    },
+
+    refundAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    
   },
   {
     timestamps: true,

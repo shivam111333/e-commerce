@@ -291,6 +291,8 @@ function Checkout() {
           "/payment/razorpay/order",
           {
             items: orderItems,
+  shippingAddress: orderData.shippingAddress,
+  isBuyNow,
           }
         );
 

@@ -27,6 +27,7 @@ export const getAllUser=async(req,res)=>{
         })
     }
 }
+
 export const getAllVendor=async(req,res)=>{
     try{
 
@@ -40,6 +41,7 @@ export const getAllVendor=async(req,res)=>{
             })
         }
         return res.status(200).json({
+            success:true,
             data:vendor
         });
                                                     
@@ -67,6 +69,7 @@ export const updateUserStatus=async(req,res)=>{
         
 
          const status_allowed=["active","blocked"];
+         
          if(!status_allowed.includes(newStatus))
          {
              return res.status(400).json({

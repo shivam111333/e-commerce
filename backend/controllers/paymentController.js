@@ -3,17 +3,210 @@ import Variant from "../models/variantSchema.js";
 import Product from "../models/productSchema.js";
 import Order from "../models/orderSchema.js";
 import Cart from "../models/cartSchema.js";
-import Payment from "../models/paymentSchema.js"; 
+import Payment from "../models/paymentSchema.js";
 import crypto from "crypto";
 
+/* =========================================================
+   Helpers
+   ========================================================= */
 
+const generateOrderNumber = () => {
+  const timestamp = Date.now().toString().slice(-8);
+  const random = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `ORD-${timestamp}-${random}`;
+};
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Payment (gateway) states only ever move forward
+const PAYMENT_RANK = {
+  pending: 0,
+  failed: 1,
+  authorized: 2,
+  captured: 3,
+  partially_refunded: 4,
+  refunded: 5,
+};
+
+const statusesBelow = (status) =>
+  Object.keys(PAYMENT_RANK).filter((s) => PAYMENT_RANK[s] < PAYMENT_RANK[status]);
+
+// Gateway status -> business-level status shown on Order and items
+const ORDER_STATUS_FOR = {
+  pending: "pending",
+  failed: "failed",
+  authorized: "pending",
+  captured: "paid",
+};
+
+// An order status is only overwritten when it is currently one of these
+// (so a late event can never undo "paid", or a later refund)
+const ORDER_STATUS_ALLOWED_FROM = {
+  pending: ["pending", "failed"],
+  failed: ["pending"],
+  paid: ["pending", "failed"],
+};
+
+/**
+ * Runs exactly once per payment. Whoever flips finalizedAt from empty to a
+ * date does the work; any other caller (verify or webhook) returns right away.
+ * Reduces stock for the Order's items. Items that are out of stock are
+ * cancelled and the Payment is flagged so an admin can refund them.
+ */
+const finalizePayment = async (payment) => {
+  const claimed = await Payment.findOneAndUpdate(
+    { _id: payment._id, finalizedAt: null },
+    { $set: { finalizedAt: new Date() } },
+    { new: true }
+  );
+
+  if (!claimed) return false;
+
+  const order = await Order.findById(payment.order);
+  if (!order) return false;
+
+  const reduced = [];
+  const outOfStockItemIds = [];
+  let refundAmount = 0;
+
+  try {
+    for (const item of order.items) {
+      if (item.status === "cancelled") continue;
+
+      const result = await Variant.updateOne(
+        { _id: item.variant, stock: { $gte: item.quantity } },
+        { $inc: { stock: -item.quantity } }
+      );
+
+      if (result.modifiedCount === 0) {
+        outOfStockItemIds.push(item._id);
+        refundAmount += item.price * item.quantity;
+      } else {
+        reduced.push({ variant: item.variant, quantity: item.quantity });
+      }
+    }
+
+    if (outOfStockItemIds.length > 0) {
+      await Payment.updateOne(
+        { _id: payment._id },
+        { $set: { needsRefund: true, refundAmount } }
+      );
+
+      await Order.updateOne(
+        { _id: order._id },
+        {
+          $set: {
+            "items.$[i].status": "cancelled",
+            "items.$[i].cancellationReason": "Out of stock after payment",
+            "items.$[i].cancelledAt": new Date(),
+          },
+        },
+        { arrayFilters: [{ "i._id": { $in: outOfStockItemIds } }] }
+      );
+    }
+  } catch (err) {
+    // Undo what this call did and release the claim so it can be retried
+    for (const r of reduced) {
+      await Variant.updateOne(
+        { _id: r.variant },
+        { $inc: { stock: r.quantity } }
+      );
+    }
+    await Payment.updateOne(
+      { _id: payment._id },
+      { $set: { finalizedAt: null } }
+    );
+    throw err;
+  }
+
+  return true;
+};
+
+/**
+ * The single place where a payment result is applied.
+ * Called by both verify (target from Razorpay API) and the webhook
+ * (target from the event). Safe to call many times, in any order.
+ *
+ * target: "authorized" | "captured" | "failed"
+ */
+const settlePayment = async (paymentId, target, rzp) => {
+  const payment = await Payment.findById(paymentId);
+
+  if (!payment) return { settled: false, reason: "not_found" };
+
+  const isSuccess = target === "authorized" || target === "captured";
+
+  // The money Razorpay holds must match what we stored at checkout
+  if (isSuccess && Number(rzp.amount) !== Math.round(payment.amount * 100)) {
+    console.error("Amount mismatch for", payment.razorpayOrderId);
+    return { settled: false, reason: "amount_mismatch" };
+  }
+
+  const set = { status: target };
+
+  // Only a successful attempt is remembered. A failed attempt must not
+  // block a later successful retry on the same Razorpay order.
+  if (isSuccess) {
+    set.razorpayPaymentId = rzp.id;
+    set.method = rzp.method;
+  }
+
+  // Atomic, forward-only update of the Payment
+  const advanced = await Payment.findOneAndUpdate(
+    { _id: paymentId, status: { $in: statusesBelow(target) } },
+    { $set: set },
+    { new: true }
+  );
+
+  const current = advanced || (await Payment.findById(paymentId));
+
+  // authorized or captured: make sure stock was reduced (once)
+  if (["authorized", "captured"].includes(current.status)) {
+    await finalizePayment(current);
+  }
+
+  // Mirror the gateway status onto the Order and every item
+  const orderStatus = ORDER_STATUS_FOR[current.status];
+  const allowedFrom = ORDER_STATUS_ALLOWED_FROM[orderStatus];
+
+  if (orderStatus && allowedFrom) {
+    await Order.updateOne(
+      { _id: current.order, "payment.status": { $in: allowedFrom } },
+      {
+        $set: {
+          "payment.status": orderStatus,
+          "items.$[].paymentStatus": orderStatus,
+        },
+      }
+    );
+  }
+
+  return { settled: true };
+};
+
+/* =========================================================
+   1. CREATE RAZORPAY ORDER
+      Creates the Razorpay order + a pending Order + a pending Payment
+   ========================================================= */
 export const createRazorpayOrder = async (req, res) => {
   try {
-    const { items } = req.body;
+    const { items, shippingAddress } = req.body;
     const userId = req.user._id;
 
     if (!userId) {
       return res.status(401).json({ success: false, message: "User not found" });
+    }
+
+    const addressFields = ["name", "phone", "address", "city", "state", "pincode"];
+
+    if (
+      !shippingAddress ||
+      addressFields.some((f) => !String(shippingAddress[f] ?? "").trim())
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Complete shipping address is required",
+      });
     }
 
     if (!Array.isArray(items) || items.length === 0) {
@@ -21,32 +214,109 @@ export const createRazorpayOrder = async (req, res) => {
     }
 
     let totalAmount = 0;
+    const orderItems = [];
+    const seen = new Set();
 
     for (const item of items) {
+      const quantity = Number(item.quantity);
+
+      if (!item.variant || !Number.isInteger(quantity) || quantity < 1) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid variant or quantity",
+        });
+      }
+
+      const key = String(item.variant);
+
+      if (seen.has(key)) {
+        return res.status(400).json({
+          success: false,
+          message: "The same variant cannot appear twice",
+        });
+      }
+      seen.add(key);
+
       const variant = await Variant.findById(item.variant);
 
       if (!variant) {
         return res.status(404).json({ success: false, message: "Variant not found" });
       }
 
-      if (variant.stock < item.quantity) {
+      if (variant.stock < quantity) {
         return res.status(400).json({
           success: false,
           message: `Insufficient stock for variant ${item.variant}`,
         });
       }
 
-      totalAmount += variant.price * item.quantity;
+      const product = await Product.findById(variant.product);
+
+      if (!product) {
+        return res.status(404).json({ success: false, message: "Product not found" });
+      }
+
+      totalAmount += variant.price * quantity;
+
+      const attributes =
+        variant.attributes instanceof Map
+          ? Object.fromEntries(variant.attributes.entries())
+          : variant.attributes || {};
+
+      orderItems.push({
+        variant: variant._id,
+        vendor: product.vendor,
+        name: product.name,
+        price: variant.price,
+        quantity,
+        attributes,
+        status: "pending",
+        paymentStatus: "pending",
+      });
     }
 
-    // Razorpay amount is in paise
-    const amountInPaise = Math.round(totalAmount * 100);
+    const orderNumber = generateOrderNumber();
 
+    // Razorpay amount is in paise
     const razorpayOrder = await razorpay.orders.create({
-      amount: amountInPaise,
+      amount: Math.round(totalAmount * 100),
       currency: "INR",
-      receipt: `receipt_${Date.now()}`,
+      receipt: orderNumber,
     });
+
+    let pendingOrder;
+
+    try {
+      pendingOrder = await Order.create({
+        orderNumber,
+        user: userId,
+        items: orderItems,
+        totalAmount,
+        payment: { method: "online", status: "pending" },
+        shippingAddress: {
+          name: String(shippingAddress.name).trim(),
+          phone: String(shippingAddress.phone).trim(),
+          address: String(shippingAddress.address).trim(),
+          city: String(shippingAddress.city).trim(),
+          state: String(shippingAddress.state).trim(),
+          pincode: String(shippingAddress.pincode).trim(),
+        },
+      });
+
+      await Payment.create({
+        user: userId,
+        order: pendingOrder._id,
+        razorpayOrderId: razorpayOrder.id,
+        amount: totalAmount,
+        currency: "INR",
+        method: "online",
+        status: "pending",
+      });
+    } catch (err) {
+      // Do not leave an Order behind without its Payment
+      if (pendingOrder) await Order.deleteOne({ _id: pendingOrder._id });
+      throw err;
+    }
 
     return res.status(200).json({
       success: true,
@@ -63,14 +333,10 @@ export const createRazorpayOrder = async (req, res) => {
   }
 };
 
-const generateOrderNumber = () => {
-  const timestamp = Date.now().toString().slice(-8);
-  const random = Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `ORD-${timestamp}-${random}`;
-};
-
 /* =========================================================
-   2. VERIFY PAYMENT + CREATE ORDER + CREATE PAYMENT
+   2. VERIFY PAYMENT (called by the frontend after paying)
+      Uses the pending Order/Payment as the source of truth.
+      Items and address from the browser are NOT used.
    ========================================================= */
 export const verifyRazorpayPayment = async (req, res) => {
   try {
@@ -78,9 +344,6 @@ export const verifyRazorpayPayment = async (req, res) => {
       razorpay_order_id,
       razorpay_payment_id,
       razorpay_signature,
-      items,
-      shippingAddress,
-      paymentMethod,
       isBuyNow,
     } = req.body;
 
@@ -97,37 +360,10 @@ export const verifyRazorpayPayment = async (req, res) => {
       });
     }
 
-    if (!Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Order items are required",
-      });
-    }
-
-    if (!shippingAddress) {
-      return res.status(400).json({
-        success: false,
-        message: "Shipping address is required",
-      });
-    }
-
-    // The customer picks card/UPI/netbanking inside Razorpay's window,
-    // so the checkout page only decides "online" vs "cod".
-    if (paymentMethod !== "online") {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid payment method for online payment",
-      });
-    }
-
-    // ------------------------------------------
-    // A. Verify Razorpay signature
-    // ------------------------------------------
-    const body = razorpay_order_id + "|" + razorpay_payment_id;
-
+    // A. Signature
     const expectedSignature = crypto
       .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
-      .update(body)
+      .update(razorpay_order_id + "|" + razorpay_payment_id)
       .digest("hex");
 
     if (expectedSignature !== razorpay_signature) {
@@ -137,212 +373,55 @@ export const verifyRazorpayPayment = async (req, res) => {
       });
     }
 
-    // ------------------------------------------
-    // B. Idempotency: was this payment already processed?
-    // ------------------------------------------
-    const existingPayment = await Payment.findOne({
-      razorpayOrderId: razorpay_order_id,
-    });
+    // B. Our pending Payment for this Razorpay order
+    const payment = await Payment.findOne({ razorpayOrderId: razorpay_order_id });
 
-    if (existingPayment) {
-      if (String(existingPayment.user) !== String(userId)) {
-        return res.status(403).json({ success: false, message: "Forbidden" });
-      }
-
-      const existingOrder = await Order.findById(existingPayment.order);
-
-      return res.status(200).json({
-        success: true,
-        message: "Order already placed",
-        data: existingOrder,
-      });
+    if (!payment) {
+      return res.status(404).json({ success: false, message: "Payment not found" });
     }
 
-    // ------------------------------------------
-    // C. Ask Razorpay for the real order + payment state
-    // ------------------------------------------
-    const razorpayOrder = await razorpay.orders.fetch(razorpay_order_id);
+    if (String(payment.user) !== String(userId)) {
+      return res.status(403).json({ success: false, message: "Forbidden" });
+    }
 
-    if (!razorpayOrder) {
+    // C. Real status from Razorpay
+    let rzpPayment = await razorpay.payments.fetch(razorpay_payment_id);
+
+    if (rzpPayment.order_id !== razorpay_order_id) {
       return res.status(400).json({
         success: false,
-        message: "Razorpay order not found",
+        message: "Payment does not belong to this order",
       });
     }
 
-    const rzpPayment = await razorpay.payments.fetch(razorpay_payment_id);
+    // With auto-capture, "authorized" turns into "captured" within a second or
+    // two. Wait briefly so the customer lands on a finished order.
+    for (let i = 0; i < 3 && rzpPayment.status === "authorized"; i++) {
+      await sleep(1000);
+      rzpPayment = await razorpay.payments.fetch(razorpay_payment_id);
+    }
 
-    if (
-      rzpPayment.order_id !== razorpay_order_id ||
-      !["authorized", "captured"].includes(rzpPayment.status)
-    ) {
+    if (!["authorized", "captured"].includes(rzpPayment.status)) {
       return res.status(400).json({
         success: false,
         message: "Payment is not successful",
       });
     }
 
-    const paymentStatus = rzpPayment.status; // "authorized" | "captured"
-    // Order/item payment status uses only business-level values
-    // (pending / paid / failed ...), so it also makes sense for COD.
-    // "authorized" exists only on the Payment (gateway) record.
-    const orderPaymentStatus =
-      paymentStatus === "captured" ? "paid" : "pending";
+    // D. Apply it (safe even if the webhook already did)
+    const result = await settlePayment(payment._id, rzpPayment.status, rzpPayment);
 
-    // ------------------------------------------
-    // D. Recalculate total from the database
-    // ------------------------------------------
-    const processedItems = [];
-    let totalAmount = 0;
-
-    for (const item of items) {
-      if (!item.variant || !item.quantity || item.quantity < 1) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid variant or quantity",
-        });
-      }
-
-      const variant = await Variant.findById(item.variant);
-
-      if (!variant) {
-        return res.status(404).json({ success: false, message: "Variant not found" });
-      }
-
-      if (variant.stock < item.quantity) {
-        return res.status(400).json({
-          success: false,
-          message: "Product is no longer available in the requested quantity",
-        });
-      }
-
-      const product = await Product.findById(variant.product);
-
-      if (!product) {
-        return res.status(404).json({ success: false, message: "Product not found" });
-      }
-
-      totalAmount += variant.price * item.quantity;
-
-      const attributes =
-        variant.attributes instanceof Map
-          ? Object.fromEntries(variant.attributes.entries())
-          : variant.attributes || {};
-
-      processedItems.push({
-        variant: variant._id,
-        vendor: product.vendor,
-        name: product.name,
-        price: variant.price,
-        quantity: item.quantity,
-        attributes,
-        status: "pending",
-        paymentStatus: orderPaymentStatus,
-      });
-    }
-
-    // ------------------------------------------
-    // E. Verify amount paid matches amount calculated
-    // ------------------------------------------
-    const expectedAmountInPaise = Math.round(totalAmount * 100);
-
-    if (Number(razorpayOrder.amount) !== expectedAmountInPaise) {
+    if (!result.settled) {
       return res.status(400).json({
         success: false,
-        message: "Payment amount does not match order amount",
+        message:
+          result.reason === "amount_mismatch"
+            ? "Payment amount does not match order amount"
+            : "Could not process payment",
       });
     }
 
-    // ------------------------------------------
-    // F. Reduce stock atomically
-    //    (only succeeds if enough stock is still there)
-    // ------------------------------------------
-    const reduced = [];
-
-    const restoreStock = async () => {
-      for (const r of reduced) {
-        await Variant.updateOne(
-          { _id: r.variant },
-          { $inc: { stock: r.quantity } }
-        );
-      }
-    };
-
-    for (const item of items) {
-      const result = await Variant.updateOne(
-        { _id: item.variant, stock: { $gte: item.quantity } },
-        { $inc: { stock: -item.quantity } }
-      );
-
-      if (result.modifiedCount === 0) {
-        await restoreStock();
-        return res.status(400).json({
-          success: false,
-          message: "Product is no longer available in the requested quantity",
-        });
-      }
-
-      reduced.push({ variant: item.variant, quantity: item.quantity });
-    }
-
-    // ------------------------------------------
-    // G. Create Order + Payment
-    // ------------------------------------------
-    let order;
-
-    try {
-      order = await Order.create({
-        orderNumber: generateOrderNumber(),
-        user: userId,
-        items: processedItems,
-        totalAmount,
-        payment: {
-          method: "online",
-          status: orderPaymentStatus,
-        },
-        shippingAddress: {
-          name: shippingAddress.name,
-          phone: shippingAddress.phone,
-          address: shippingAddress.address,
-          city: shippingAddress.city,
-          state: shippingAddress.state,
-          pincode: shippingAddress.pincode,
-        },
-      });
-
-      await Payment.create({
-        user: userId,
-        order: order._id,
-        razorpayOrderId: razorpay_order_id,
-        razorpayPaymentId: razorpay_payment_id,
-        amount: totalAmount,
-        currency: "INR",
-        method: rzpPayment.method, // real method: upi / card / netbanking / wallet ...
-        status: paymentStatus,
-      });
-    } catch (err) {
-      // Undo everything this request did
-      await restoreStock();
-      if (order) await Order.deleteOne({ _id: order._id });
-
-      // Two simultaneous requests: the unique index caught the second one
-      if (err.code === 11000) {
-        const p = await Payment.findOne({ razorpayOrderId: razorpay_order_id });
-        const o = p && (await Order.findById(p.order));
-
-        return res.status(200).json({
-          success: true,
-          message: "Order already placed",
-          data: o,
-        });
-      }
-
-      throw err;
-    }
-
-    // ------------------------------------------
-    // H. Clear cart (not for Buy Now)
-    // ------------------------------------------
+    // E. Clear cart (not for Buy Now)
     if (!isBuyNow) {
       await Cart.findOneAndUpdate(
         { user: userId },
@@ -350,9 +429,17 @@ export const verifyRazorpayPayment = async (req, res) => {
       );
     }
 
-    return res.status(201).json({
+    const [order, latest] = await Promise.all([
+      Order.findById(payment.order),
+      Payment.findById(payment._id),
+    ]);
+
+    return res.status(200).json({
       success: true,
-      message: "Payment successful and order placed",
+      message: latest.needsRefund
+        ? "Payment received. Some items were out of stock and will be refunded."
+        : "Payment successful and order placed",
+      needsRefund: latest.needsRefund,
       data: order,
     });
   } catch (error) {
@@ -365,25 +452,17 @@ export const verifyRazorpayPayment = async (req, res) => {
    3. RAZORPAY WEBHOOK
    ========================================================= */
 
-// Payment states only move forward, never backwards
-const PAYMENT_RANK = {
-  pending: 0,
-  failed: 1,
-  authorized: 2,
-  captured: 3,
-  partially_refunded: 4,
-  refunded: 5,
-};
-
-// Razorpay event -> new Payment.status / Order payment status
-const EVENT_MAP = {
-  "payment.authorized": { payment: "authorized", order: "pending" },
-  "payment.captured": { payment: "captured", order: "paid" },
-  "payment.failed": { payment: "failed", order: "failed" },
+// Razorpay event -> target Payment status
+const EVENT_TARGET = {
+  "payment.authorized": "authorized",
+  "payment.captured": "captured",
+  "payment.failed": "failed",
 };
 
 export const razorpayWebhook = async (req, res) => {
   try {
+    console.log("WEBHOOK HIT", new Date().toISOString());
+
     const webhookSignature = req.headers["x-razorpay-signature"];
 
     if (!webhookSignature) {
@@ -393,13 +472,14 @@ export const razorpayWebhook = async (req, res) => {
       });
     }
 
-    // req.body is a Buffer here because of express.raw() in server.js
+    // req.body is a Buffer because of express.raw() in server.js
     const expectedSignature = crypto
       .createHmac("sha256", process.env.RAZORPAY_WEBHOOK_SECRET)
       .update(req.body)
       .digest("hex");
 
     if (expectedSignature !== webhookSignature) {
+      console.log("WEBHOOK SIGNATURE MISMATCH");
       return res.status(400).json({
         success: false,
         message: "Invalid webhook signature",
@@ -407,13 +487,18 @@ export const razorpayWebhook = async (req, res) => {
     }
 
     const payload = JSON.parse(req.body.toString());
-    console.log("RAZORPAY WEBHOOK EVENT:", payload.event);
 
-    const mapped = EVENT_MAP[payload.event];
+    console.log(
+      "RAZORPAY WEBHOOK EVENT:",
+      payload.event,
+      req.headers["x-razorpay-event-id"]
+    );
+
+    const target = EVENT_TARGET[payload.event];
     const rzpPayment = payload.payload?.payment?.entity;
 
     // Events we don't handle: acknowledge so Razorpay doesn't retry
-    if (!mapped || !rzpPayment?.order_id) {
+    if (!target || !rzpPayment?.order_id) {
       return res.status(200).json({ success: true, message: "Event ignored" });
     }
 
@@ -421,44 +506,58 @@ export const razorpayWebhook = async (req, res) => {
       razorpayOrderId: rzpPayment.order_id,
     });
 
-    // verifyRazorpayPayment hasn't created it yet (or it never will).
-    // verify reads the real status from Razorpay itself, so nothing is lost.
     if (!payment) {
       console.warn("Webhook: no Payment found for", rzpPayment.order_id);
       return res.status(200).json({ success: true, message: "No matching payment" });
     }
 
-    // A different attempt on the same Razorpay order (e.g. an earlier failed try)
-    if (payment.razorpayPaymentId && payment.razorpayPaymentId !== rzpPayment.id) {
+    // A different successful attempt than the one we already recorded
+    if (
+      target !== "failed" &&
+      payment.razorpayPaymentId &&
+      payment.razorpayPaymentId !== rzpPayment.id
+    ) {
       return res.status(200).json({ success: true, message: "Different attempt ignored" });
     }
 
-    // Duplicate or out-of-order delivery
-    if (PAYMENT_RANK[mapped.payment] <= PAYMENT_RANK[payment.status]) {
-      return res.status(200).json({ success: true, message: "Already processed" });
-    }
+    const result = await settlePayment(payment._id, target, rzpPayment);
 
-    payment.status = mapped.payment;
-    payment.razorpayPaymentId = payment.razorpayPaymentId || rzpPayment.id;
-    await payment.save();
-
-    const order = await Order.findById(payment.order);
-
-    if (order) {
-      order.payment.status = mapped.order;
-
-      order.items.forEach((item) => {
-        if (item.status !== "cancelled") {
-          item.paymentStatus = mapped.order;
-        }
-      });
-
-      await order.save();
-    }
-
-    return res.status(200).json({ success: true, message: "Webhook processed" });
+    return res.status(200).json({
+      success: true,
+      message: result.settled ? "Webhook processed" : "Webhook not applied",
+    });
   } catch (err) {
     console.error("Webhook error:", err);
     return res.status(500).json({ success: false, message: err.message });
   }
+};
+
+/* =========================================================
+   4. CLEANUP (optional): remove online orders nobody paid for
+      Call it from a timer or cron, e.g. once an hour.
+   ========================================================= */
+export const cleanupAbandonedOnlineOrders = async (hours = 24) => {
+  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
+
+  const stale = await Payment.find({
+    razorpayOrderId: { $exists: true },
+    razorpayPaymentId: { $exists: false }, // never had a successful attempt
+    status: { $in: ["pending", "failed"] },
+    createdAt: { $lt: cutoff },
+  }).select("_id order");
+
+  if (stale.length === 0) return 0;
+
+  await Order.deleteMany({
+    _id: { $in: stale.map((p) => p.order) },
+    "payment.method": "online",
+    "payment.status": { $in: ["pending", "failed"] },
+  });
+
+  await Payment.deleteMany({
+    _id: { $in: stale.map((p) => p._id) },
+    status: { $in: ["pending", "failed"] },
+  });
+
+  return stale.length;
 };
