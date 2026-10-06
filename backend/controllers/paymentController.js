@@ -487,7 +487,7 @@ export const razorpayWebhook = async (req, res) => {
     }
 
     const payload = JSON.parse(req.body.toString());
-
+      
     console.log(
       "RAZORPAY WEBHOOK EVENT:",
       payload.event,
@@ -532,32 +532,3 @@ export const razorpayWebhook = async (req, res) => {
   }
 };
 
-/* =========================================================
-   4. CLEANUP (optional): remove online orders nobody paid for
-      Call it from a timer or cron, e.g. once an hour.
-   ========================================================= */
-export const cleanupAbandonedOnlineOrders = async (hours = 24) => {
-  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
-
-  const stale = await Payment.find({
-    razorpayOrderId: { $exists: true },
-    razorpayPaymentId: { $exists: false }, // never had a successful attempt
-    status: { $in: ["pending", "failed"] },
-    createdAt: { $lt: cutoff },
-  }).select("_id order");
-
-  if (stale.length === 0) return 0;
-
-  await Order.deleteMany({
-    _id: { $in: stale.map((p) => p.order) },
-    "payment.method": "online",
-    "payment.status": { $in: ["pending", "failed"] },
-  });
-
-  await Payment.deleteMany({
-    _id: { $in: stale.map((p) => p._id) },
-    status: { $in: ["pending", "failed"] },
-  });
-
-  return stale.length;
-};
