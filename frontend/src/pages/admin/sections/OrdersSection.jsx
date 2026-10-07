@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom'
+
 import { toast } from 'react-toastify';
 import api from '../../../api/axios.jsx'
 import { FaBox, FaMapMarkerAlt } from 'react-icons/fa'
@@ -8,7 +8,7 @@ import { FaBox, FaMapMarkerAlt } from 'react-icons/fa'
 function OrderSection() {
   const [orders, setOrder] = useState("");
   const [loading, setLoading] = useState(true)
-  const navigate = useNavigate();
+
 
   useEffect(() => {
     const fetchOrders = async () => {
@@ -58,7 +58,7 @@ function OrderSection() {
       case "shipped":
         return "bg-purple-100 text-purple-700";
 
-    
+
 
       case "delivered":
         return "bg-green-100 text-green-700";
@@ -72,7 +72,7 @@ function OrderSection() {
   };
 
   // NEW: Payment status styling
-  
+
 
   const updateGlobalPaymentStatus = async (
     orderId,
@@ -184,12 +184,7 @@ function OrderSection() {
               No orders have been placed yet.
             </p>
 
-            <button
-              onClick={() => navigate("/")}
-              className="mt-6 bg-black text-white px-6 py-3 rounded-lg hover:bg-gray-800"
-            >
-              Start Shopping
-            </button>
+
           </div>
         ) : (
           <div className="space-y-6">

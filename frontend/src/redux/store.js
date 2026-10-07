@@ -12,6 +12,9 @@ import {
 } from "redux-persist";
 
 import storage from "redux-persist/es/storage";
+//There are two incompatible module systems in JavaScript
+//Historically, JavaScript had no built-in way to split code across files and share things between them.
+//  Node.js solved this early on with CommonJS (CJS)
 
 import authReducer from "./slices/authSlice";
 import cartReducer from "./slices/cartSlice.js";

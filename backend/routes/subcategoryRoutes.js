@@ -1,7 +1,13 @@
 import express from "express";
 const router = express.Router();
+import validate from "../middlewares/validate.js";
 import authentication from "../middlewares/authMiddleware.js";
 import authorization from "../middlewares/authorizationMiddleware.js";
+import { idParamSchema } from "../validators/commonValidator.js";
+import {
+  createSubcategorySchema,
+  updateSubcategorySchema,
+} from "../validators/subcategoryValidator.js";
 
 import {
   getsubCategory,
@@ -9,16 +15,45 @@ import {
   createsubCategory,
   updatesubCategory,
   deletesubCategory,
-  getSubcategoriesByCategory
+  getSubcategoriesByCategory,
 } from "../controllers/subcategoryController.js";
 
-router.get('/',getsubCategory);
-router.get('/:id',getsubCategoryById);
-router.post('/',authentication,authorization(["admin"]),createsubCategory);
-router.put('/:id',authentication,authorization(["admin"]),updatesubCategory);
-router.delete('/:id',authentication,authorization(["admin"]),deletesubCategory);
-router.get('/category/:id',getSubcategoriesByCategory);
+// Public
+router.get("/", getsubCategory);
 
+// Specific path first, so it can never be mistaken for "/:id"
+router.get(
+  "/category/:id",
+  validate(idParamSchema(), "params"),
+  getSubcategoriesByCategory
+);
+
+router.get("/:id", validate(idParamSchema(), "params"), getsubCategoryById);
+
+// Admin only: authentication → authorization → validation → controller
+router.post(
+  "/",
+  authentication,
+  authorization(["admin"]),
+  validate(createSubcategorySchema),
+  createsubCategory
+);
+
+router.put(
+  "/:id",
+  authentication,
+  authorization(["admin"]),
+  validate(idParamSchema(), "params"),
+  validate(updateSubcategorySchema),
+  updatesubCategory
+);
+
+router.delete(
+  "/:id",
+  authentication,
+  authorization(["admin"]),
+  validate(idParamSchema(), "params"),
+  deletesubCategory
+);
 
 export default router;
-

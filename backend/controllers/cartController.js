@@ -42,6 +42,8 @@ export const addToCart = async (req, res) => {
 
     const qty = Number(quantity);
 
+    
+
     // Validate request
     if (!variant || !Number.isInteger(qty) || qty < 1) {
       return res.status(400).json({
@@ -99,7 +101,15 @@ export const addToCart = async (req, res) => {
 
     // Variant already exists
     if (existItem) {
+      const MAX_QTY_PER_ITEM = 10
       const newQuantity = existItem.quantity + qty;
+
+      if (newQuantity > MAX_QTY_PER_ITEM) {
+  return res.status(400).json({
+    success: false,
+    message: `You can buy at most ${MAX_QTY_PER_ITEM} of one item`,
+  });
+}
 
       // Check total quantity against stock
       if (newQuantity > variantExist.stock) {

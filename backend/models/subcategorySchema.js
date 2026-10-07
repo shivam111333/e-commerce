@@ -17,6 +17,9 @@ const subcategorySchema=new mongoose.Schema({
     timestamps:true
 }
 )
-
+subcategorySchema.index(
+  { category: 1, name: 1 },
+  { unique: true, collation: { locale: "en", strength: 2 } }
+);
 const Subcategory=mongoose.model("Subcategory",subcategorySchema);
 export default Subcategory;

@@ -88,7 +88,7 @@ export const updatesubCategory = async (req, res) => {
       { name: name.trim(), category },
       {
         new: true,
-        runvaldidator: true,
+        runValidators: true
       },
     );
     if (!subcategory) {

@@ -1,20 +1,29 @@
-import mongoose from 'mongoose'
+import mongoose from "mongoose";
 
-const categorySchema=new mongoose.Schema({
-
-
-    name:{
-        type:String,
-        required:true
+const categorySchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: [true, "Category name is required"],
+      trim: true,
+      minlength: 2,
+      maxlength: 50,
     },
-    description:{
-        type:String,
-        required:false
-    }
+    description: {
+      type: String,
+      trim: true,
+      default: "",
+      maxlength: 500,
+    },
+  },
+  { timestamps: true }
+);
 
-},{
-    timestamps:true
-})
+// Case-insensitive unique name
+categorySchema.index(
+  { name: 1 },
+  { unique: true, collation: { locale: "en", strength: 2 } }
+);
 
-const Category=mongoose.model("Category",categorySchema);
+const Category = mongoose.model("Category", categorySchema);
 export default Category;

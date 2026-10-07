@@ -17,10 +17,11 @@ const cartSchema = new mongoose.Schema(
           required: true,
         },
         quantity: {
-          type: Number,
-          min:1,
-          required:true
-        },
+  type: Number,
+  required: [true, "Quantity is required"],
+  min: [1, "Quantity must be at least 1"],
+  validate: { validator: Number.isInteger, message: "Quantity must be a whole number" },
+},
       },
     ],
   },
@@ -28,5 +29,6 @@ const cartSchema = new mongoose.Schema(
     timestamps: true,
   },
 );
+
 const Cart = mongoose.model("Cart", cartSchema);
 export default Cart;

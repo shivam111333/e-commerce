@@ -50,12 +50,17 @@ function Home() {
         
         }
           console.log(response.data.data)
-        setProducts(response.data.data);
+        setProducts(response.data.data || []);
       } catch (error) {
-        console.log("Product error:", error);
-
-        setError("Failed to load products");
-        setProducts([]);
+      
+          if (error.response?.status === 404) {
+      // Treat "not found" as simply no results, not a failure
+      setProducts([]);
+          }
+       else {
+      setError("Failed to load products");
+      setProducts([]);
+    }
       } finally {
         setLoading(false);
       }

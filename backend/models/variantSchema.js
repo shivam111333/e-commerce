@@ -12,14 +12,10 @@ const variantSchema = new mongoose.Schema(
       required: false,
     },
     price: {
-      type: Number,
-      required: true,
-      min: 0,
+      type: Number, required: true, min: 1
     },
     stock: {
-      type: Number,
-      default: 1,
-      required: false,
+      type: Number, default: 1, min: 0, validate: Number.isInteger
     },
     attributes: {
       type: Map, //key value pair size-S
@@ -28,8 +24,7 @@ const variantSchema = new mongoose.Schema(
       default: {},
     },
     attributeKey: {
-      type: String,
-      required: true,
+      type: String, required: true, trim: true
     },
   },
   {

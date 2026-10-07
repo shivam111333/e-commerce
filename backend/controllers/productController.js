@@ -8,58 +8,63 @@ import User from '../models/userSchema.js'
 
 export const getProduct = async (req, res) => {
   try {
-    // 1. Find active vendors
+    // 1. Find all active vendor IDs
     const activeVendors = await User.find(
-      {
-        role: "vendor",
-        status: "active",
-      },
+      { role: "vendor", status: "active" }, 
       "_id"
     );
-
-    const activeVendorIds = activeVendors.map(
-      (vendor) => vendor._id
-    );
-
-    // 2. Find products belonging to active vendors
-    const products = await Product.find();
-
-    // 3. Get variants
-    const productsWithVariants = [];
-
-    for (const product of products) {
-      const variants = await Variant.find({
-        product: product._id,
-        stock: { $gt: 0 },
-      });
-
-      // Only include products that have stock
-      if (variants.length > 0) {
-        productsWithVariants.push({
-          ...product.toObject(),
-          variants,
-        });
-      }
+    
+    if (!activeVendors.length) {
+      return res.status(404).json({ success: false, message: "Product Not Found" });
     }
+    
+    const activeVendorIds = activeVendors.map((vendor) => vendor._id);
+
+    // 2. Fetch products and their in-stock variants in a single database operation
+    const productsWithVariants = await Product.aggregate([
+      { 
+        // Filter products belonging to active vendors
+        $match: { vendor: { $in: activeVendorIds } } 
+      },
+      {
+        // Join with the variants collection
+        $lookup: {
+          from: "variants", // Ensure this matches your actual MongoDB collection name for variants
+          localField: "_id",
+          foreignField: "product",
+          as: "variants"
+        }
+      },
+      {
+        // Filter the joined variants to only keep those with stock > 0
+        $addFields: {
+          variants: {
+            $filter: {
+              input: "$variants",
+              as: "variant",
+              cond: { $gt: ["$$variant.stock", 0] }
+            }
+          }
+        }
+      },
+      {
+        // Only return products that have at least one in-stock variant
+        $match: {
+          "variants.0": { $exists: true }
+        }
+      }
+    ]);
 
     if (productsWithVariants.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Product Not Found",
-      });
+      return res.status(404).json({ success: false, message: "Product Not Found" });
     }
 
-    return res.status(200).json({
-      success: true,
-      data: productsWithVariants
-    });
+    return res.status(200).json({ success: true, data: productsWithVariants });
   } catch (err) {
-    return res.status(500).json({
-      success: false,
-      message: err.message,
-    });
+    return res.status(500).json({ success: false, message: err.message });
   }
-}
+};
+
 
 export const getProductById = async (req, res) => {
   try {
@@ -210,30 +215,29 @@ export const updateProduct = async (req, res) => {
 export const deleteProduct = async (req, res) => {
   try {
     const id = req.params.id;
-    if (!id) {
-      return res.json({ message: "Id is Required" });
+
+    const product = await Product.findById(id);
+    if (!product) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
     }
-    const product_exist = await Product.findById(id);
-    if (!product_exist) {
-      return res.status(404).json({
-        message: "Product Not found",
+
+    if (product.vendor.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to delete this product",
       });
     }
-    await Variant.deleteMany({
-      product: id,
-    });  
-    
-    const result = await Product.findByIdAndDelete(id);
-    return res.status(200).json({
-      success: true,
-      message: "Successfuly Deleted Product",
-    });
+
+    await Variant.deleteMany({ product: id });
+    await Product.findByIdAndDelete(id);
+
+    return res
+      .status(200)
+      .json({ success: true, message: "Successfully deleted product" });
   } catch (err) {
-    return res.status(500).json({
-      success: false,
-      message: err.message,
-    });
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
-
 
