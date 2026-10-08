@@ -6,6 +6,10 @@ import { useSelector } from "react-redux";
 import api from "../../api/axios.jsx";
 import { clearCart } from "../../redux/slices/cartSlice";
 import { useDispatch } from "react-redux";
+import { MAX_ORDER_AMOUNT } from "../../config/limits.js";
+import { Form, Formik } from "formik";
+import FormField from "../../component/FormField.jsx";
+import { checkoutAddressSchema } from "../../validation/checkoutSchemas.js";
 
 
 function Checkout() {
@@ -35,15 +39,6 @@ function Checkout() {
 
   // ADD: Payment method state
   const [paymentMethod, setPaymentMethod] = useState("cod");
-
-  const [shippingAddress, setShippingAddress] = useState({
-    name: "",
-    phone: "",
-    address: "",
-    city: "",
-    state: "",
-    pincode: "",
-  });
 
   // ==========================================
   // FETCH CHECKOUT ITEMS
@@ -123,19 +118,6 @@ function Checkout() {
   }, [isAuthenticated, isBuyNow, buyNowVariant, buyNowQuantity, navigate]);
 
   // ==========================================
-  // ADDRESS CHANGE
-  // ==========================================
-
-  const handleAddressChange = (e) => {
-    const { name, value } = e.target;
-
-    setShippingAddress((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
-
-  // ==========================================
   // TOTAL
   // ==========================================
 
@@ -145,14 +127,23 @@ function Checkout() {
 
     return total + price * quantity;
   }, 0);
+  const exceedsLimit = totalAmount > MAX_ORDER_AMOUNT;
 
   // ==========================================
   // PLACE ORDER
   // ==========================================
 
 
-  const handlePayment = async () => {
-    
+  const handlePayment = async (values) => {
+    if (exceedsLimit) {
+      toast.error(
+        `Order total cannot exceed ₹${MAX_ORDER_AMOUNT.toLocaleString("en-IN")}.`
+      );
+      return;
+    }
+
+    let razorpayOpened = false;
+
     try {
       setPlacingOrder(true);
 
@@ -160,36 +151,13 @@ function Checkout() {
       // 1. Basic validation
       // -----------------------------------------
 
-      const {
-        name,
-        phone,
-        address,
-        city,
-        state,
-        pincode,
-      } = shippingAddress;
-
-      if (
-        !name.trim() ||
-        !phone.trim() ||
-        !address.trim() ||
-        !city.trim() ||
-        !state.trim() ||
-        !pincode.trim()
-      ) {
-        toast.error("Please fill all shipping address fields.");
-        return;
-      }
-
-      if (phone.length < 10) {
-        toast.error("Please enter a valid phone number.");
-        return;
-      }
-
-      if (pincode.length !== 6) {
-        toast.error("Please enter a valid 6-digit pincode.");
-        return;
-      }
+      const castValues = checkoutAddressSchema.cast(values);
+      const shippingAddress = Object.fromEntries(
+        Object.entries(castValues.shippingAddress).map(([key, value]) => [
+          key,
+          value.trim(),
+        ])
+      );
 
       if (!items.length) {
         toast.error("No items available for checkout.");
@@ -234,16 +202,11 @@ function Checkout() {
         items: orderItems,
 
         shippingAddress: {
-          name: name.trim(),
-          phone: phone.trim(),
-          address: address.trim(),
-          city: city.trim(),
-          state: state.trim(),
-          pincode: pincode.trim(),
+          ...shippingAddress,
         },
 
         paymentMethod,
-      
+        isBuyNow,
       };
 
       // -----------------------------------------
@@ -427,6 +390,7 @@ function Checkout() {
           new window.Razorpay(options);
 
         razorpay.open();
+        razorpayOpened = true;
 
         return;
       }
@@ -443,9 +407,7 @@ function Checkout() {
         "Payment failed."
       );
     } finally {
-      // Don't set false immediately for Razorpay
-      // because Razorpay is still open.
-      if (paymentMethod === "cod") {
+      if (!razorpayOpened) {
         setPlacingOrder(false);
       }
     }
@@ -491,11 +453,22 @@ function Checkout() {
           </p>
         </div>
 
-        <form onSubmit={(e) => {
-          e.preventDefault();
-          handlePayment();
-        }}
+        <Formik
+          initialValues={{
+            shippingAddress: {
+              name: "",
+              phone: "",
+              address: "",
+              city: "",
+              state: "",
+              pincode: "",
+            },
+          }}
+          validationSchema={checkoutAddressSchema}
+          onSubmit={handlePayment}
         >
+          {({ isSubmitting }) => (
+        <Form noValidate>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* =================================
                 LEFT
@@ -510,103 +483,56 @@ function Checkout() {
                 </h2>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Name */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Full Name
-                    </label>
-
-                    <input
-                      type="text"
-                      name="name"
-                      value={shippingAddress.name}
-                      onChange={handleAddressChange}
-                      placeholder="Enter your name"
-                      className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  {/* Phone */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Phone
-                    </label>
-
-                    <input
-                      type="tel"
-                      name="phone"
-                      value={shippingAddress.phone}
-                      onChange={handleAddressChange}
-                      placeholder="Enter phone number"
-                      maxLength="10"
-                      className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  {/* Address */}
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Address
-                    </label>
-
-                    <textarea
-                      name="address"
-                      value={shippingAddress.address}
-                      onChange={handleAddressChange}
-                      placeholder="House number, street, area..."
-                      rows="3"
-                      className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                    />
-                  </div>
-
-                  {/* City */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      City
-                    </label>
-
-                    <input
-                      type="text"
-                      name="city"
-                      value={shippingAddress.city}
-                      onChange={handleAddressChange}
-                      placeholder="Enter city"
-                      className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  {/* State */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      State
-                    </label>
-
-                    <input
-                      type="text"
-                      name="state"
-                      value={shippingAddress.state}
-                      onChange={handleAddressChange}
-                      placeholder="Enter state"
-                      className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  {/* Pincode */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Pincode
-                    </label>
-
-                    <input
-                      type="text"
-                      name="pincode"
-                      value={shippingAddress.pincode}
-                      onChange={handleAddressChange}
-                      placeholder="6-digit pincode"
-                      maxLength="6"
-                      className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
+                  <FormField
+                    name="shippingAddress.name"
+                    label="Full Name"
+                    autoComplete="name"
+                    placeholder="Enter your name"
+                    className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
+                    containerClassName="mb-0"
+                  />
+                  <FormField
+                    name="shippingAddress.phone"
+                    label="Phone"
+                    type="tel"
+                    autoComplete="tel"
+                    placeholder="Enter phone number"
+                    className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
+                    containerClassName="mb-0"
+                  />
+                  <FormField
+                    name="shippingAddress.address"
+                    label="Address"
+                    as="textarea"
+                    rows={3}
+                    placeholder="House number, street, area..."
+                    className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    containerClassName="md:col-span-2 mb-0"
+                  />
+                  <FormField
+                    name="shippingAddress.city"
+                    label="City"
+                    autoComplete="address-level2"
+                    placeholder="Enter city"
+                    className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
+                    containerClassName="mb-0"
+                  />
+                  <FormField
+                    name="shippingAddress.state"
+                    label="State"
+                    autoComplete="address-level1"
+                    placeholder="Enter state"
+                    className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
+                    containerClassName="mb-0"
+                  />
+                  <FormField
+                    name="shippingAddress.pincode"
+                    label="Pincode"
+                    autoComplete="postal-code"
+                    placeholder="6-digit pincode"
+                    className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
+                    containerClassName="mb-0"
+                  />
                 </div>
               </div>
 
@@ -765,11 +691,21 @@ function Checkout() {
                   </div>
                 </div>
 
+                {exceedsLimit && (
+                  <p className="mt-4 text-sm text-red-600" role="alert">
+                    Order total cannot exceed ₹
+                    {MAX_ORDER_AMOUNT.toLocaleString("en-IN")}. Please remove
+                    or reduce items before checkout.
+                  </p>
+                )}
+
                 {/* Place Order */}
 
                 <button
                   type="submit"
-                  disabled={placingOrder || items.length === 0}
+                  disabled={
+                    placingOrder || isSubmitting || items.length === 0 || exceedsLimit
+                  }
 
                   className="w-full mt-6 bg-blue-600 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2 hover:bg-blue-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
                 >
@@ -785,7 +721,9 @@ function Checkout() {
               </div>
             </div>
           </div>
-        </form>
+        </Form>
+          )}
+        </Formik>
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 import * as yup from "yup";
+import { phoneRule } from "./commonValidator.js";
 
 const name = yup
   .string()
@@ -12,14 +13,6 @@ const email = yup
   .lowercase()
   .email("Please enter a valid email address")
   .max(255, "Email must be at most 255 characters");
-
-const phone = yup
-  .string()
-  .trim()
-  .matches(
-    /^\+?[1-9]\d{1,14}$/,
-    "Please enter a valid phone number"
-  );
 
 const password = yup
   .string()
@@ -39,7 +32,7 @@ export const registerSchema = yup.object({
 
   email: email.required("Email is required"),
 
-  phone: phone.required("Phone number is required"),
+  phone: phoneRule("Phone number is required", "Please enter a valid phone number"),
 
   role: role.required("Role is required"),
 
@@ -50,5 +43,6 @@ export const registerSchema = yup.object({
 export const loginSchema = yup.object({
   email: email.required("Email is required"),
 
-  password: password.required("Password is required"),
+  // Existing accounts should not be blocked by registration password rules.
+  password: yup.string().required("Password is required"),
 });

@@ -3,6 +3,7 @@ import Product from "../models/productSchema.js";
 import Variant from "../models/variantSchema.js";
 import Cart from "../models/cartSchema.js";
 import Payment from "../models/paymentSchema.js";
+import { formatInr, getMaxOrderAmount } from "../config/limits.js";
 
 // ==========================================
 // UTILITIES
@@ -227,6 +228,13 @@ export const createUserOrder = async (req, res) => {
         attributes,
         status: "pending",
         paymentStatus: "pending",
+      });
+    }
+
+    if (totalAmount > getMaxOrderAmount()) {
+      return res.status(400).json({
+        success: false,
+        message: `Order total cannot exceed ${formatInr(getMaxOrderAmount())}`,
       });
     }
 

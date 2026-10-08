@@ -1,10 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState,useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { FaShoppingCart, FaArrowLeft } from "react-icons/fa";
 import { toast } from "react-toastify";
 import { useSelector, useDispatch } from "react-redux";
 import { setCart as setReduxCart } from "../redux/slices/cartSlice.js";
 import api from "../api/axios.jsx";
+import {
+  MAX_ORDER_AMOUNT,
+  MAX_QTY_PER_ITEM as MAX_QTY,
+} from "../config/limits.js";
+// Show "only N left" in orange at or below this stock level
+const LOW_STOCK = 5;
 
 function ProductDetails() {
   const { id } = useParams();
@@ -36,8 +42,6 @@ function ProductDetails() {
         setError("");
 
         const response = await api.get(`/product/${id}`);
-
-        console.log("Product response:", response.data);
 
         const data = response.data.data;
 
@@ -73,29 +77,41 @@ function ProductDetails() {
   // =========================
   // FETCH CART (to determine Add to Cart vs Go to Cart)
   // =========================
+  // =========================
+  // FETCH CART (populated, so prices are available)
+  // =========================
+
+  const fetchCart = useCallback(async () => {
+    if (!isAuthenticated) {
+      setCartItems([]);
+      return;
+    }
+
+    try {
+      const response = await api.get("/cart");
+
+      const items = response.data?.data?.items || [];
+
+      setCartItems(items);
+      dispatch(setReduxCart(items));
+    } catch (error) {
+      // Fail silently: don't block the page over the cart
+      console.error("Fetch cart error:", error);
+      setCartItems([]);
+    }
+  }, [isAuthenticated, dispatch]);
 
   useEffect(() => {
-    const fetchCart = async () => {
-      if (!isAuthenticated) {
-        setCartItems([]);
-        return;
-      }
-
-      try {
-        const response = await api.get("/cart");
-
-        const items = response.data?.data?.items || [];
-
-        setCartItems(items);
-        dispatch(setReduxCart(items));
-      } catch (error) {
-        setCartItems([]); // fail silently — don't block the page over this
-        toast.error(error);
-      }
-    };
-
     fetchCart();
-  }, [isAuthenticated]);
+  }, [fetchCart]);
+
+  // Current cart total, from database prices returned by GET /cart
+  const cartTotal = cartItems.reduce(
+    (sum, item) =>
+      sum + Number(item.variant?.price || 0) * Number(item.quantity || 0),
+    0
+  );
+  const cartRoomLeft = Math.max(0, MAX_ORDER_AMOUNT - cartTotal);
 
   // =========================
   // VARIANT SELECTION
@@ -114,12 +130,14 @@ function ProductDetails() {
 
   // =========================
   // QUANTITY
+  // Limited by BOTH the stock left and the per-item maximum
   // =========================
 
   const increaseQuantity = () => {
     const stock = selectedVariant?.stock ?? product?.stock ?? 0;
+    const maxAllowed = Math.min(stock, MAX_QTY);
 
-    if (quantity < stock) {
+    if (quantity < maxAllowed) {
       setQuantity((prev) => prev + 1);
     }
   };
@@ -148,6 +166,22 @@ function ProductDetails() {
 
     if (selectedVariant.stock <= 0) {
       toast.error("This variant is out of stock.");
+      return;
+    }
+
+    if (quantity > selectedVariant.stock) {
+      toast.error(`Only ${selectedVariant.stock} left in stock.`);
+      return;
+    }
+        if (cartTotal + Number(selectedVariant.price) * quantity > MAX_ORDER_AMOUNT) {
+      toast.error(
+        `Your cart total cannot exceed ₹${MAX_ORDER_AMOUNT.toLocaleString("en-IN")}`
+      );
+      return;
+    }
+
+    if (quantity > MAX_QTY) {
+      toast.error(`You can buy at most ${MAX_QTY} of one item.`);
       return;
     }
 
@@ -215,6 +249,9 @@ function ProductDetails() {
 
   const currentStock = selectedVariant?.stock ?? product.stock ?? 0;
 
+  // The most the user can pick right now
+  const maxAllowed = Math.min(currentStock, MAX_QTY);
+
   // Is the currently selected variant already in the cart?
   const isInCart = selectedVariant
     ? cartItems.some((item) => {
@@ -224,6 +261,10 @@ function ProductDetails() {
       })
     : false;
 
+  // =========================
+  // BUY NOW
+  // =========================
+
   const handleCheckout = () => {
     if (!isAuthenticated) {
       toast.info("Please log in to continue.");
@@ -231,7 +272,10 @@ function ProductDetails() {
       return;
     }
 
-   
+    if (!selectedVariant) {
+      toast.error("Please select a variant.");
+      return;
+    }
 
     if (selectedVariant.stock <= 0) {
       toast.error("This variant is out of stock.");
@@ -239,7 +283,19 @@ function ProductDetails() {
     }
 
     if (quantity > selectedVariant.stock) {
-      toast.error("Selected quantity is greater than available stock.");
+      toast.error(`Only ${selectedVariant.stock} left in stock.`);
+      return;
+    }
+
+    if (quantity > MAX_QTY) {
+      toast.error(`You can buy at most ${MAX_QTY} of one item.`);
+      return;
+    }
+
+    if (Number(selectedVariant.price) * quantity > MAX_ORDER_AMOUNT) {
+      toast.error(
+        `Order total cannot exceed ₹${MAX_ORDER_AMOUNT.toLocaleString("en-IN")}.`
+      );
       return;
     }
 
@@ -251,6 +307,7 @@ function ProductDetails() {
       },
     });
   };
+
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4">
       <div className="max-w-7xl mx-auto">
@@ -273,8 +330,6 @@ function ProductDetails() {
             ========================= */}
 
             <div>
-              {/* Main Image */}
-
               <div className="w-full h-[450px] bg-gray-100 rounded-xl flex items-center justify-center overflow-hidden">
                 {selectedImage ? (
                   <img
@@ -293,11 +348,10 @@ function ProductDetails() {
             ========================= */}
 
             <div>
-              {/* Product Name */}
-
               <h1 className="text-3xl md:text-4xl font-bold text-gray-900">
                 {product.name}
               </h1>
+
               {product.category?.name && (
                 <p className="text-sm text-blue-600 font-medium mb-2">
                   Category: {product.category.name}
@@ -310,8 +364,6 @@ function ProductDetails() {
                 </p>
               )}
 
-              {/* Description */}
-
               <p className="text-gray-600 mt-4 leading-7">
                 {product.description}
               </p>
@@ -320,7 +372,7 @@ function ProductDetails() {
 
               <div className="mt-6">
                 <span className="text-3xl font-bold text-gray-900">
-                  ₹{currentPrice}
+                  ₹{Number(currentPrice).toLocaleString("en-IN")}
                 </span>
               </div>
 
@@ -328,8 +380,16 @@ function ProductDetails() {
 
               <div className="mt-3">
                 {currentStock > 0 ? (
-                  <span className="text-green-600 font-medium">
-                    In Stock ({currentStock} available)
+                  <span
+                    className={`font-medium ${
+                      currentStock <= LOW_STOCK
+                        ? "text-orange-600"
+                        : "text-green-600"
+                    }`}
+                  >
+                    {currentStock <= LOW_STOCK
+                      ? `Only ${currentStock} left in stock`
+                      : `In Stock (${currentStock} available)`}
                   </span>
                 ) : (
                   <span className="text-red-600 font-medium">Out of Stock</span>
@@ -379,7 +439,7 @@ function ProductDetails() {
                             </div>
 
                             <span className="font-semibold">
-                              ₹{variant.price}
+                              ₹{Number(variant.price).toLocaleString("en-IN")}
                             </span>
                           </div>
                         </button>
@@ -412,17 +472,26 @@ function ProductDetails() {
 
                     <button
                       onClick={increaseQuantity}
-                      disabled={quantity >= currentStock}
+                      disabled={quantity >= maxAllowed}
                       className="w-10 h-10 border border-gray-300 rounded-r-lg hover:bg-gray-100 disabled:opacity-40"
                     >
                       +
                     </button>
                   </div>
+
+                  {/* Why the + button stopped */}
+                  {quantity >= maxAllowed && (
+                    <p className="text-xs text-gray-500 mt-2">
+                      {currentStock <= MAX_QTY
+                        ? `Maximum available: ${currentStock}`
+                        : `Maximum ${MAX_QTY} per order`}
+                    </p>
+                  )}
                 </div>
               )}
 
               {/* =========================
-                  ADD TO CART
+                  ADD TO CART / BUY NOW
               ========================= */}
 
               <div className="flex gap-4 mt-7 w-full">

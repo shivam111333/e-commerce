@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "react-toastify";
 import api from "../../api/axios.jsx";
+import { Form, Formik } from "formik";
+import FormField from "../../component/FormField.jsx";
+import { productSchema } from "../../validation/productSchemas.js";
 
 function EditProduct() {
   const { id } = useParams();
@@ -9,6 +12,7 @@ function EditProduct() {
 
   const [categories, setCategories] = useState([]);
   const [subcategories, setSubcategories] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState("");
 
   const [product, setProduct] = useState({
     name: "",
@@ -17,7 +21,6 @@ function EditProduct() {
     subcategory: "",
   });
 
-  const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -74,6 +77,9 @@ function EditProduct() {
             productData.subcategory ||
             "",
         });
+        setSelectedCategory(
+          productData.category?._id || productData.category || ""
+        );
       } catch (error) {
         console.error(
           "Error fetching product:",
@@ -98,15 +104,12 @@ function EditProduct() {
 
   // Fetch subcategories when category changes
   useEffect(() => {
-    if (!product.category) {
-     
-      return;
-    }
+    if (!selectedCategory) return;
 
     const fetchSubcategories = async () => {
       try {
         const response = await api.get(
-          `/subcategory/category/${product.category}`
+          `/subcategory/category/${selectedCategory}`
         );
 
         setSubcategories(response.data.data || []);
@@ -126,82 +129,18 @@ function EditProduct() {
     };
 
     fetchSubcategories();
-  }, [product.category]);
-
-  // Handle input change
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-
-    if (name === "category") {
-      setProduct((prev) => ({
-        ...prev,
-        category: value,
-        subcategory: "",
-      }));
-
-      setErrors((prev) => ({
-        ...prev,
-        category: "",
-        subcategory: "",
-      }));
-
-      return;
-    }
-
-    setProduct((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-
-    setErrors((prev) => ({
-      ...prev,
-      [name]: "",
-    }));
-  };
-
-  // Validate form
-  const validateForm = () => {
-    const newErrors = {};
-
-    if (!product.name.trim()) {
-      newErrors.name = "Product name is required";
-    }
-
-    if (!product.description.trim()) {
-      newErrors.description =
-        "Product description is required";
-    }
-
-    if (!product.category) {
-      newErrors.category =
-        "Please select a category";
-    }
-
-    if (!product.subcategory) {
-      newErrors.subcategory =
-        "Please select a subcategory";
-    }
-
-    setErrors(newErrors);
-
-    return Object.keys(newErrors).length === 0;
-  };
+  }, [selectedCategory]);
 
   // Update product
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    if (!validateForm()) {
-      return;
-    }
-
+  const handleSubmit = async (values, { setSubmitting }) => {
     try {
       setSaving(true);
 
-      const response = await api.put(
-        `/product/${id}`,
-        product
-      );
+      const response = await api.put(`/product/${id}`, {
+        ...values,
+        name: values.name.trim(),
+        description: values.description.trim(),
+      });
 
       toast.success(
         response.data.message ||
@@ -221,6 +160,7 @@ function EditProduct() {
       );
     } finally {
       setSaving(false);
+      setSubmitting(false);
     }
   };
 
@@ -256,170 +196,87 @@ function EditProduct() {
             </button>
           </div>
 
-          <form
+          <Formik
+            enableReinitialize
+            initialValues={product}
+            validationSchema={productSchema}
             onSubmit={handleSubmit}
-            className="space-y-5"
           >
-
-            {/* Product Name */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Product Name
-              </label>
-
-              <input
-                type="text"
-                name="name"
-                value={product.name}
-                onChange={handleChange}
-                placeholder="Enter product name"
-                className={`w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 ${
-                  errors.name
-                    ? "border-red-500 focus:ring-red-400"
-                    : "border-gray-300 focus:ring-blue-500"
-                }`}
-              />
-
-              {errors.name && (
-                <p className="text-red-500 text-sm mt-1">
-                  {errors.name}
-                </p>
-              )}
-            </div>
-
-            {/* Description */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Description
-              </label>
-
-              <textarea
-                name="description"
-                value={product.description}
-                onChange={handleChange}
-                placeholder="Enter product description"
-                rows="5"
-                className={`w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 ${
-                  errors.description
-                    ? "border-red-500 focus:ring-red-400"
-                    : "border-gray-300 focus:ring-blue-500"
-                }`}
-              />
-
-              {errors.description && (
-                <p className="text-red-500 text-sm mt-1">
-                  {errors.description}
-                </p>
-              )}
-            </div>
-
-            {/* Category */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Category
-              </label>
-
-              <select
-                name="category"
-                value={product.category}
-                onChange={handleChange}
-                className={`w-full border rounded-lg px-3 py-2 bg-white outline-none focus:ring-2 ${
-                  errors.category
-                    ? "border-red-500 focus:ring-red-400"
-                    : "border-gray-300 focus:ring-blue-500"
-                }`}
-              >
-                <option value="">
-                  Select Category
-                </option>
-
-                {categories.map((category) => (
-                  <option
-                    key={category._id}
-                    value={category._id}
-                  >
-                    {category.name}
+            {({ isSubmitting, setFieldValue }) => (
+              <Form className="space-y-5" noValidate>
+                <FormField
+                  name="name"
+                  label="Product Name"
+                  placeholder="Enter product name"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <FormField
+                  name="description"
+                  label="Description"
+                  as="textarea"
+                  rows={5}
+                  placeholder="Enter product description"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <FormField
+                  name="category"
+                  label="Category"
+                  as="select"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                  onChange={(event) => {
+                    const categoryId = event.target.value;
+                    setFieldValue("category", categoryId);
+                    setFieldValue("subcategory", "");
+                    setSubcategories([]);
+                    setSelectedCategory(categoryId);
+                  }}
+                >
+                  <option value="">Select Category</option>
+                  {categories.map((category) => (
+                    <option key={category._id} value={category._id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </FormField>
+                <FormField
+                  name="subcategory"
+                  label="Subcategory"
+                  as="select"
+                  disabled={!selectedCategory}
+                  className={`w-full border border-gray-300 rounded-lg px-3 py-2 bg-white outline-none focus:ring-2 focus:ring-blue-500 ${
+                    !selectedCategory ? "bg-gray-100 cursor-not-allowed" : ""
+                  }`}
+                >
+                  <option value="">
+                    {selectedCategory
+                      ? "Select Subcategory"
+                      : "Select Category First"}
                   </option>
-                ))}
-              </select>
-
-              {errors.category && (
-                <p className="text-red-500 text-sm mt-1">
-                  {errors.category}
-                </p>
-              )}
-            </div>
-
-            {/* Subcategory */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Subcategory
-              </label>
-
-              <select
-                name="subcategory"
-                value={product.subcategory}
-                onChange={handleChange}
-                disabled={!product.category}
-                className={`w-full border rounded-lg px-3 py-2 bg-white outline-none focus:ring-2 ${
-                  errors.subcategory
-                    ? "border-red-500 focus:ring-red-400"
-                    : "border-gray-300 focus:ring-blue-500"
-                } ${
-                  !product.category
-                    ? "bg-gray-100 cursor-not-allowed"
-                    : ""
-                }`}
-              >
-                <option value="">
-                  {product.category
-                    ? "Select Subcategory"
-                    : "Select Category First"}
-                </option>
-
-                {subcategories.map((subcategory) => (
-                  <option
-                    key={subcategory._id}
-                    value={subcategory._id}
+                  {subcategories.map((subcategory) => (
+                    <option key={subcategory._id} value={subcategory._id}>
+                      {subcategory.name}
+                    </option>
+                  ))}
+                </FormField>
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/vendor/products/${id}`)}
+                    className="flex-1 border border-gray-300 text-gray-700 py-3 rounded-lg hover:bg-gray-100"
                   >
-                    {subcategory.name}
-                  </option>
-                ))}
-              </select>
-
-              {errors.subcategory && (
-                <p className="text-red-500 text-sm mt-1">
-                  {errors.subcategory}
-                </p>
-              )}
-            </div>
-
-            {/* Buttons */}
-            <div className="flex gap-3 pt-4">
-
-              <button
-                type="button"
-                onClick={() =>
-                  navigate(`/vendor/products/${id}`)
-                }
-                className="flex-1 border border-gray-300 text-gray-700 py-3 rounded-lg hover:bg-gray-100"
-              >
-                Cancel
-              </button>
-
-              <button
-                type="submit"
-                disabled={saving}
-                className="flex-1 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {saving
-                  ? "Updating..."
-                  : "Update Product"}
-              </button>
-
-            </div>
-
-          </form>
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving || isSubmitting}
+                    className="flex-1 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {saving || isSubmitting ? "Updating..." : "Update Product"}
+                  </button>
+                </div>
+              </Form>
+            )}
+          </Formik>
         </div>
 
       </div>

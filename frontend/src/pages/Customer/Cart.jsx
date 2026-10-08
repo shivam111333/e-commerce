@@ -5,9 +5,10 @@ import { FaTrash, FaMinus, FaPlus, FaShoppingBag } from "react-icons/fa";
 import api from "../../api/axios.jsx";
 import { useDispatch } from "react-redux";
 import { setCart as setReduxCart } from "../../redux/slices/cartSlice.js";
-
-// Must match MAX_QTY_PER_ITEM in validators/cartValidator.js
-const MAX_QTY = 10;
+import {
+  MAX_ORDER_AMOUNT,
+  MAX_QTY_PER_ITEM as MAX_QTY,
+} from "../../config/limits.js";
 
 function Cart() {
   const navigate = useNavigate();
@@ -125,11 +126,18 @@ function Cart() {
   const hasOutOfStockItem = items.some(
     (item) => item.quantity > (item.variant?.stock ?? 0)
   );
+  const exceedsLimit = totalAmount > MAX_ORDER_AMOUNT;
 
   // =========================
   // CHECKOUT
   // =========================
   const handleCheckout = () => {
+    if (exceedsLimit) {
+      toast.error(
+        `Cart total cannot exceed ₹${MAX_ORDER_AMOUNT.toLocaleString("en-IN")}.`
+      );
+      return;
+    }
     if (hasOutOfStockItem) {
       toast.error("Please fix out-of-stock items before checkout.");
       return;
@@ -330,9 +338,17 @@ function Cart() {
                 <span>₹{totalAmount.toLocaleString("en-IN")}</span>
               </div>
 
+              {exceedsLimit && (
+                <p className="text-red-500 text-xs mb-3">
+                  Cart total cannot exceed ₹
+                  {MAX_ORDER_AMOUNT.toLocaleString("en-IN")}. Please remove or
+                  reduce some items.
+                </p>
+              )}
+
               <button
                 onClick={handleCheckout}
-                disabled={hasOutOfStockItem}
+                disabled={hasOutOfStockItem || exceedsLimit}
                 className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
               >
                 Proceed to Checkout

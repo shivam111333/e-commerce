@@ -1,5 +1,5 @@
 import * as yup from "yup";
-import { objectId } from "./commonValidator.js";
+import { objectId, phoneRule, pincodeRule } from "./commonValidator.js";
 
 const orderItemSchema = yup.object({
   variant: objectId("variant"),
@@ -20,14 +20,10 @@ const shippingAddressSchema = yup.object({
     .max(100, "Shipping name must be at most 100 characters")
     .required("Shipping name is required"),
 
-  phone: yup
-    .string()
-    .trim()
-    .matches(
-      /^\+?[1-9]\d{1,14}$/,
-      "Please enter a valid shipping phone number"
-    )
-    .required("Shipping phone is required"),
+  phone: phoneRule(
+    "Shipping phone is required",
+    "Please enter a valid shipping phone number"
+  ),
 
   address: yup
     .string()
@@ -50,11 +46,7 @@ const shippingAddressSchema = yup.object({
     .max(100, "State must be at most 100 characters")
     .required("State is required"),
 
-  pincode: yup
-    .string()
-    .trim()
-    .matches(/^\d{6}$/, "Pincode must be a valid 6-digit number")
-    .required("Pincode is required"),
+  pincode: pincodeRule(),
 });
 
 // POST /api/order

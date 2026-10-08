@@ -5,6 +5,7 @@ import Order from "../models/orderSchema.js";
 import Cart from "../models/cartSchema.js";
 import Payment from "../models/paymentSchema.js";
 import crypto from "crypto";
+import { formatInr, getMaxOrderAmount } from "../config/limits.js";
 
 /* =========================================================
    Helpers
@@ -275,6 +276,13 @@ export const createRazorpayOrder = async (req, res) => {
       });
     }
 
+    if (totalAmount > getMaxOrderAmount()) {
+      return res.status(400).json({
+        success: false,
+        message: `Order total cannot exceed ${formatInr(getMaxOrderAmount())}`,
+      });
+    }
+
     const orderNumber = generateOrderNumber();
 
     // Razorpay amount is in paise
@@ -531,4 +539,3 @@ export const razorpayWebhook = async (req, res) => {
     return res.status(500).json({ success: false, message: err.message });
   }
 };
-

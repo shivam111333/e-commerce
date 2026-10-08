@@ -2,23 +2,33 @@ import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { FaTrash, FaPlus, FaImage } from "react-icons/fa";
 import { toast } from "react-toastify";
-import api from "../../api/axios";
+import { FieldArray, Form, Formik } from "formik";
 
-const MAX_PRICE = 500000;
-const MAX_IMAGES = 5;
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5 MB
-const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+import api from "../../api/axios";
+import FormField from "../../component/FormField.jsx";
+import {
+  ALLOWED_VARIANT_IMAGE_TYPES,
+  MAX_ATTRIBUTES,
+  MAX_IMAGE_SIZE_BYTES,
+  MAX_PRICE,
+  MAX_STOCK,
+  MAX_VARIANT_IMAGES,
+} from "../../config/limits.js";
+import { createVariantSchema } from "../../validation/variantSchemas.js";
+
+const getImageError = (errors) => {
+  if (typeof errors.images === "string") return errors.images;
+  if (Array.isArray(errors.images)) {
+    return errors.images.find((error) => typeof error === "string");
+  }
+  return undefined;
+};
 
 function AddVariant() {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  const [attributes, setAttributes] = useState([{ key: "", value: "" }]);
-  const [price, setPrice] = useState("");
-  const [stock, setStock] = useState("");
-  const [images, setImages] = useState([]);
   const [imagePreviews, setImagePreviews] = useState([]);
-  const [loading, setLoading] = useState(false);
 
   // Keep the latest previews so we can free them when leaving the page
   const previewsRef = useRef([]);
@@ -31,128 +41,82 @@ function AddVariant() {
   }, []);
 
   // --------------------------------
-  // Attributes
-  // --------------------------------
-  const addAttribute = () => {
-    setAttributes((prev) => [...prev, { key: "", value: "" }]);
-  };
-
-  const removeAttribute = (index) => {
-    if (attributes.length === 1) return;
-    setAttributes((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const handleAttributeChange = (index, field, value) => {
-    setAttributes((prev) =>
-      prev.map((attr, i) => (i === index ? { ...attr, [field]: value } : attr))
-    );
-  };
-
   // --------------------------------
   // Images
   // --------------------------------
-  const handleImageChange = (e) => {
+  const handleImageChange = (
+    e,
+    currentImages,
+    setFieldValue,
+    setFieldError
+  ) => {
     const selectedFiles = Array.from(e.target.files);
     e.target.value = ""; // lets the same file be picked again after removal
 
     if (selectedFiles.length === 0) return;
 
-    if (images.length + selectedFiles.length > MAX_IMAGES) {
-      toast.error(`You can upload maximum ${MAX_IMAGES} images`);
+    if (currentImages.length + selectedFiles.length > MAX_VARIANT_IMAGES) {
+      toast.error(`You can upload maximum ${MAX_VARIANT_IMAGES} images`);
+      setFieldError(
+        "images",
+        `You can upload maximum ${MAX_VARIANT_IMAGES} images`
+      );
       return;
     }
 
     for (const file of selectedFiles) {
-      if (!ALLOWED_TYPES.includes(file.type)) {
-        toast.error("Only JPG, PNG or WEBP images are allowed");
+      if (!ALLOWED_VARIANT_IMAGE_TYPES.includes(file.type)) {
+        toast.error("Only JPG and PNG images are allowed");
+        setFieldError("images", "Only JPG and PNG images are allowed");
         return;
       }
-      if (file.size > MAX_IMAGE_SIZE) {
+      if (file.size > MAX_IMAGE_SIZE_BYTES) {
         toast.error(`${file.name} is larger than 5 MB`);
+        setFieldError("images", "Images must be 5 MB or smaller");
         return;
       }
     }
 
-    setImages((prev) => [...prev, ...selectedFiles]);
+    setFieldError("images", undefined);
+    setFieldValue("images", [...currentImages, ...selectedFiles]);
     setImagePreviews((prev) => [
       ...prev,
       ...selectedFiles.map((file) => URL.createObjectURL(file)),
     ]);
   };
 
-  const removeImage = (index) => {
+  const removeImage = (index, images, setFieldValue) => {
     URL.revokeObjectURL(imagePreviews[index]); // free the browser memory
-    setImages((prev) => prev.filter((_, i) => i !== index));
+    setFieldValue("images", images.filter((_, i) => i !== index));
     setImagePreviews((prev) => prev.filter((_, i) => i !== index));
   };
 
   // --------------------------------
   // Submit variant
   // --------------------------------
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
+  const handleSubmit = async (values, { setSubmitting }) => {
     if (!id) {
       toast.error("Product ID is missing");
       return;
     }
 
-    const priceNumber = Number(price);
-    if (
-      !price ||
-      Number.isNaN(priceNumber) ||
-      priceNumber < 1 ||
-      priceNumber > MAX_PRICE
-    ) {
-      toast.error(
-        `Price must be between 1 and ${MAX_PRICE.toLocaleString("en-IN")}`
-      );
-      return;
-    }
-
-    const stockNumber = Number(stock);
-    if (stock === "" || !Number.isInteger(stockNumber) || stockNumber < 0) {
-      toast.error("Stock must be a whole number, 0 or more");
-      return;
-    }
-
-    if (images.length === 0) {
-      toast.error("Please upload at least one image");
-      return;
-    }
-
-    // Convert attribute rows into an object (keys lowercased to match the server)
-    const attributesObject = {};
-
-    for (const attribute of attributes) {
-      const key = attribute.key.trim().toLowerCase();
-      const value = attribute.value.trim();
-
-      if (!key || !value) {
-        toast.error("Please fill all attribute fields");
-        return;
-      }
-
-      if (key in attributesObject) {
-        toast.error(`Duplicate attribute: ${key}`);
-        return;
-      }
-
-      attributesObject[key] = value;
-    }
-
     try {
-      setLoading(true);
+      const attributesObject = Object.fromEntries(
+        values.attributes.map(({ key, value }) => [
+          key.trim().toLowerCase(),
+          value.trim(),
+        ])
+      );
 
       const formData = new FormData();
 
       // Product ID comes from the URL
       formData.append("product", id);
-      formData.append("price", price);
-      formData.append("stock", stock);
+      formData.append("price", String(Number(values.price)));
+      formData.append("stock", String(Number(values.stock)));
       formData.append("attributes", JSON.stringify(attributesObject));
 
-      images.forEach((image) => {
+      values.images.forEach((image) => {
         formData.append("images", image);
       });
 
@@ -167,7 +131,7 @@ function AddVariant() {
 
       toast.error(error.response?.data?.message || "Failed to add variant");
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
@@ -182,155 +146,194 @@ function AddVariant() {
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="p-6 space-y-6">
-        {/* Attributes */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-medium text-gray-800">Attributes</h3>
-
-            <button
-              type="button"
-              onClick={addAttribute}
-              className="flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg"
-            >
-              <FaPlus />
-              Add Attribute
-            </button>
-          </div>
-
-          <div className="space-y-3">
-            {attributes.map((attribute, index) => (
-              <div key={index} className="flex gap-3">
-                <input
-                  type="text"
-                  placeholder="Attribute name (e.g. color)"
-                  value={attribute.key}
-                  onChange={(e) =>
-                    handleAttributeChange(index, "key", e.target.value)
-                  }
-                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                />
-
-                <input
-                  type="text"
-                  placeholder="Value (e.g. purple)"
-                  value={attribute.value}
-                  onChange={(e) =>
-                    handleAttributeChange(index, "value", e.target.value)
-                  }
-                  className="flex-1 border border-gray-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-                />
-
-                <button
-                  type="button"
-                  onClick={() => removeAttribute(index)}
-                  className="px-3 text-red-500 hover:bg-red-50 rounded-lg"
-                  title="Remove attribute"
-                >
-                  <FaTrash />
-                </button>
+      <Formik
+        initialValues={{
+          product: id || "",
+          price: "",
+          stock: "",
+          attributes: [{ key: "", value: "" }],
+          images: [],
+        }}
+        validationSchema={createVariantSchema}
+        onSubmit={handleSubmit}
+      >
+        {({
+          values,
+          errors,
+          touched,
+          isSubmitting,
+          setFieldValue,
+          setFieldTouched,
+          setFieldError,
+        }) => (
+          <Form className="p-6 space-y-6" noValidate>
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-medium text-gray-800">Attributes</h3>
+                <FieldArray name="attributes">
+                  {({ push }) => (
+                    <button
+                      type="button"
+                      onClick={() => push({ key: "", value: "" })}
+                      disabled={values.attributes.length >= MAX_ATTRIBUTES}
+                      className="flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg disabled:opacity-50"
+                    >
+                      <FaPlus />
+                      Add Attribute
+                    </button>
+                  )}
+                </FieldArray>
               </div>
-            ))}
-          </div>
-        </div>
 
-        {/* Price and Stock */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Price
-            </label>
-
-            <input
-              type="number"
-              min="1"
-              max={MAX_PRICE}
-              step="0.01"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              placeholder="Enter price"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Stock
-            </label>
-
-            <input
-              type="number"
-              min="0"
-              step="1"
-              value={stock}
-              onChange={(e) => setStock(e.target.value)}
-              placeholder="Enter stock"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-        </div>
-
-        {/* Images */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Product Images
-          </label>
-
-          <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:bg-gray-50">
-            <FaImage className="text-2xl text-gray-400 mb-2" />
-
-            <span className="text-sm text-gray-500">
-              Click to select images
-            </span>
-
-            <span className="text-xs text-gray-400 mt-1">
-              Maximum 5 images, JPG/PNG/WEBP, up to 5 MB each
-            </span>
-
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              multiple
-              onChange={handleImageChange}
-              className="hidden"
-            />
-          </label>
-
-          {/* Image previews */}
-          {imagePreviews.length > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 mt-4">
-              {imagePreviews.map((preview, index) => (
-                <div key={preview} className="relative group">
-                  <img
-                    src={preview}
-                    alt={`Preview ${index + 1}`}
-                    className="w-full h-28 object-cover rounded-lg border"
-                  />
-
-                  <button
-                    type="button"
-                    onClick={() => removeImage(index)}
-                    className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition"
-                  >
-                    <FaTrash className="text-xs" />
-                  </button>
-                </div>
-              ))}
+              <FieldArray name="attributes">
+                {({ remove }) => (
+                  <div className="space-y-3">
+                    {values.attributes.map((attribute, index) => (
+                      <div key={index} className="flex items-start gap-3">
+                        <FormField
+                          name={`attributes.${index}.key`}
+                          aria-label="Attribute name"
+                          placeholder="Attribute name (e.g. color)"
+                          containerClassName="flex-1 mb-0"
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <FormField
+                          name={`attributes.${index}.value`}
+                          aria-label="Attribute value"
+                          placeholder="Value (e.g. purple)"
+                          containerClassName="flex-1 mb-0"
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => remove(index)}
+                          className="px-3 py-2 text-red-500 hover:bg-red-50 rounded-lg"
+                          title="Remove attribute"
+                          aria-label={`Remove attribute ${index + 1}`}
+                        >
+                          <FaTrash />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </FieldArray>
+              {typeof errors.attributes === "string" && touched.attributes && (
+                <p className="mt-1 text-sm text-red-600" role="alert">
+                  {errors.attributes}
+                </p>
+              )}
             </div>
-          )}
-        </div>
 
-        {/* Submit */}
-        <div className="flex justify-end pt-4 border-t border-gray-200">
-          <button
-            type="submit"
-            disabled={loading}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? "Adding Variant..." : "Add Variant"}
-          </button>
-        </div>
-      </form>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <FormField
+                name="price"
+                label="Price"
+                type="number"
+                min="1"
+                max={MAX_PRICE}
+                step="0.01"
+                placeholder="Enter price"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <FormField
+                name="stock"
+                label="Stock"
+                type="number"
+                min="0"
+                max={MAX_STOCK}
+                step="1"
+                placeholder="Enter stock"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="variant-images"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
+                Product Images
+              </label>
+              <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:bg-gray-50">
+                <FaImage className="text-2xl text-gray-400 mb-2" />
+                <span className="text-sm text-gray-500">Click to select images</span>
+                <span className="text-xs text-gray-400 mt-1">
+                  Maximum {MAX_VARIANT_IMAGES} images, JPG/PNG, up to 5 MB each
+                </span>
+                <input
+                  id="variant-images"
+                  type="file"
+                  accept="image/jpeg,image/png"
+                  multiple
+                  onChange={(event) => {
+                    handleImageChange(
+                      event,
+                      values.images,
+                      setFieldValue,
+                      setFieldError
+                    );
+                    setFieldTouched("images", true, false);
+                  }}
+                  className="hidden"
+                  aria-describedby={
+                    touched.images && getImageError(errors)
+                      ? "variant-images-error"
+                      : undefined
+                  }
+                  aria-invalid={
+                    touched.images && getImageError(errors) ? "true" : undefined
+                  }
+                />
+              </label>
+              {touched.images && getImageError(errors) && (
+                <p
+                  id="variant-images-error"
+                  className="mt-1 text-sm text-red-600"
+                  role="alert"
+                >
+                  {getImageError(errors)}
+                </p>
+              )}
+
+              {imagePreviews.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 mt-4">
+                  {imagePreviews.map((preview, index) => (
+                    <div key={preview} className="relative group">
+                      <img
+                        src={preview}
+                        alt={`Preview ${index + 1}`}
+                        className="w-full h-28 object-cover rounded-lg border"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          removeImage(index, values.images, setFieldValue);
+                          setFieldTouched("images", true, false);
+                        }}
+                        className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition"
+                        aria-label={`Remove image ${index + 1}`}
+                      >
+                        <FaTrash className="text-xs" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-4 border-t border-gray-200">
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSubmitting ? "Adding Variant..." : "Add Variant"}
+              </button>
+            </div>
+          </Form>
+        )}
+      </Formik>
     </div>
   );
 }

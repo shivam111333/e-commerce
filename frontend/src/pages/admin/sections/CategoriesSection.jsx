@@ -1,8 +1,14 @@
 import { useState, useEffect } from "react";
 import { toast } from "react-toastify";
 import { FaTrash, FaPlus } from "react-icons/fa";
+import { Form, Formik } from "formik";
 
 import api from "../../../api/axios.jsx";
+import FormField from "../../../component/FormField.jsx";
+import {
+  createCategorySchema,
+  createSubcategorySchema,
+} from "../../../validation/taxonomySchemas.js";
 
 function CategoriesSection() {
   const [categories, setCategories] = useState([]);
@@ -13,13 +19,10 @@ function CategoriesSection() {
   // Add subcategory form
   const [showSubcategoryForm, setShowSubcategoryForm] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState(null);
-  const [subcategoryName, setSubcategoryName] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  //category add form
+  // Category add form
   const [showCategoryForm, setShowCategoryForm] = useState(false);
-  const [categoryName, setCategoryName] = useState("");
-  const [discription, setDiscription] = useState("");
   const [submittingCategory, setSubmittingCategory] = useState(false);
 
   // --------------------------------
@@ -53,6 +56,7 @@ function CategoriesSection() {
 
   // --------------------------------
   // Fetch Subcategories
+  
   // --------------------------------
 
   const fetchSubcategories = async (categoryList) => {
@@ -115,51 +119,35 @@ function CategoriesSection() {
 
   const handleOpenSubcategoryForm = (category) => {
     setSelectedCategory(category);
-    setSubcategoryName("");
     setShowSubcategoryForm(true);
   };
 
-  //open add Category Form
+  // Open Add Category Form
   const handleOpenCategoryForm = () => {
-    setCategoryName("");
-    setDiscription("");
     setShowCategoryForm(true);
   };
 
-  //add Category function
-  const handleAddCategory = async (e) => {
-    e.preventDefault();
-    if (!categoryName.trim()) {
-      toast.error("Category name is required");
-      return;
-    }
-    if (!discription.trim()) {
-      toast.error("Discription is required");
-      return;
-    }
+  const handleAddCategory = async (values, { resetForm }) => {
     try {
       setSubmittingCategory(true);
 
       const response = await api.post("/category/", {
-        name: categoryName.trim(),
-        discription: discription.trim(),
+        name: values.name.trim(),
+        description: values.description.trim(),
       });
 
       const newCategory = response.data.data;
 
-      toast.success("Subcategory added successfully");
+      toast.success("Category added successfully");
 
       // Add new category directly to UI
       setCategories((prev) => [...prev, newCategory]);
 
       // Close form
       setShowCategoryForm(false);
-
-      setCategoryName("");
-      setDiscription("");
+      resetForm();
     } catch (err) {
-      console.log(err);
-
+      console.error(err);
       toast.error(err.response?.data?.message || "Failed to add category");
     } finally {
       setSubmittingCategory(false);
@@ -169,14 +157,7 @@ function CategoriesSection() {
   // Add Subcategory
   // --------------------------------
 
-  const handleAddSubcategory = async (e) => {
-    e.preventDefault();
-
-    if (!subcategoryName.trim()) {
-      toast.error("Subcategory name is required");
-      return;
-    }
-
+  const handleAddSubcategory = async (values, { resetForm }) => {
     if (!selectedCategory) {
       toast.error("Category is required");
       return;
@@ -186,8 +167,8 @@ function CategoriesSection() {
       setSubmitting(true);
 
       const response = await api.post("/subcategory/", {
-        name: subcategoryName.trim(),
-        category: selectedCategory._id,
+        name: values.name.trim(),
+        category: values.category.trim(),
       });
 
       const newSubcategory = response.data.data;
@@ -206,10 +187,9 @@ function CategoriesSection() {
       // Close form
       setShowSubcategoryForm(false);
       setSelectedCategory(null);
-      setSubcategoryName("");
+      resetForm();
     } catch (err) {
-      console.log(err);
-
+      console.error(err);
       toast.error(err.response?.data?.message || "Failed to add subcategory");
     } finally {
       setSubmitting(false);
@@ -436,41 +416,43 @@ function CategoriesSection() {
               </span>
             </p>
 
-            <form onSubmit={handleAddSubcategory}>
-              <label className="mb-2 block text-sm font-medium text-gray-700">
-                Subcategory Name
-              </label>
+            <Formik
+              initialValues={{
+                name: "",
+                category: selectedCategory?._id || "",
+              }}
+              validationSchema={createSubcategorySchema}
+              onSubmit={handleAddSubcategory}
+            >
+              <Form noValidate>
+                <FormField
+                  name="name"
+                  label="Subcategory Name"
+                  placeholder="Enter subcategory name"
+                />
 
-              <input
-                type="text"
-                value={subcategoryName}
-                onChange={(e) => setSubcategoryName(e.target.value)}
-                placeholder="Enter subcategory name"
-                className="mb-5 w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-black"
-              />
+                <div className="flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSubcategoryForm(false);
+                      setSelectedCategory(null);
+                    }}
+                    className="rounded-lg border border-gray-300 px-4 py-2 text-gray-700 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
 
-              <div className="flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowSubcategoryForm(false);
-                    setSelectedCategory(null);
-                    setSubcategoryName("");
-                  }}
-                  className="rounded-lg border border-gray-300 px-4 py-2 text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="rounded-lg bg-black px-4 py-2 text-white disabled:opacity-50"
-                >
-                  {submitting ? "Adding..." : "Add Subcategory"}
-                </button>
-              </div>
-            </form>
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="rounded-lg bg-black px-4 py-2 text-white disabled:opacity-50"
+                  >
+                    {submitting ? "Adding..." : "Add Subcategory"}
+                  </button>
+                </div>
+              </Form>
+            </Formik>
           </div>
         </div>
       )}
@@ -484,53 +466,44 @@ function CategoriesSection() {
               Add Category
             </h2>
 
-            <form onSubmit={handleAddCategory}>
-              <label className="mb-2 block text-sm font-medium text-gray-700">
-                Category Name
-              </label>
+            <Formik
+              initialValues={{ name: "", description: "" }}
+              validationSchema={createCategorySchema}
+              onSubmit={handleAddCategory}
+            >
+              <Form noValidate>
+                <FormField
+                  name="name"
+                  label="Category Name"
+                  placeholder="Enter category name"
+                />
+                <FormField
+                  name="description"
+                  label="Description (optional)"
+                  as="textarea"
+                  rows={3}
+                  placeholder="Enter category description"
+                />
 
-              <input
-                type="text"
-                value={categoryName}
-                onChange={(e) => setCategoryName(e.target.value)}
-                placeholder="Enter subcategory name"
-                className="mb-5 w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-black"
-              />
-              <label className="mb-2 block text-sm font-medium text-gray-700">
-                Discription
-              </label>
+                <div className="flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowCategoryForm(false)}
+                    className="rounded-lg border border-gray-300 px-4 py-2 text-gray-700 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
 
-              <input
-                type="text"
-                value={discription}
-                onChange={(e) => setDiscription(e.target.value)}
-                placeholder="Enter subcategory name"
-                className="mb-5 w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-black"
-              />
-
-              <div className="flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowCategoryForm(false);
-
-                    setSubcategoryName("");
-                    setDiscription("");
-                  }}
-                  className="rounded-lg border border-gray-300 px-4 py-2 text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="rounded-lg bg-black px-4 py-2 text-white disabled:opacity-50"
-                >
-                  {submittingCategory ? "Adding..." : "Add Category"}
-                </button>
-              </div>
-            </form>
+                  <button
+                    type="submit"
+                    disabled={submittingCategory}
+                    className="rounded-lg bg-black px-4 py-2 text-white disabled:opacity-50"
+                  >
+                    {submittingCategory ? "Adding..." : "Add Category"}
+                  </button>
+                </div>
+              </Form>
+            </Formik>
           </div>
         </div>
       )}

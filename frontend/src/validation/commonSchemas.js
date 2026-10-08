@@ -1,6 +1,5 @@
 import * as yup from "yup";
 
-const OBJECT_ID_REGEX = /^[0-9a-fA-F]{24}$/;
 const INDIAN_MOBILE_REGEX = /^[6-9]\d{9}$/;
 const INDIAN_PINCODE_REGEX = /^[1-9]\d{5}$/;
 
@@ -14,7 +13,7 @@ export const normalizePhone = (value) => {
 
 export const phoneRule = (
   requiredMessage = "Phone number is required",
-  invalidMessage = "Please enter a valid 10-digit mobile number"
+  invalidMessage = "Enter a valid 10-digit mobile number"
 ) =>
   yup
     .string()
@@ -32,16 +31,9 @@ export const pincodeRule = (
     .matches(INDIAN_PINCODE_REGEX, invalidMessage)
     .required(requiredMessage);
 
-// Reusable single field: objectId("category")
-export const objectId = (label = "id") =>
+export const objectIdRule = (label = "id") =>
   yup
     .string()
     .trim()
-    .matches(OBJECT_ID_REGEX, `Invalid ${label}`)
+    .matches(/^[0-9a-fA-F]{24}$/, `Invalid ${label}`)
     .required(`${label} is required`);
-
-// Validates a route param: idParamSchema() for /:id, idParamSchema("categoryId") for /:categoryId
-export const idParamSchema = (name = "id") =>
-  yup.object({
-    [name]: objectId(name),
-  });
