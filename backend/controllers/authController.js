@@ -51,6 +51,7 @@ export const verifyEmail = async (req, res) => {
     });
   }
 };
+
 export const register = async (req,res) => {
   try {
     const {
@@ -101,8 +102,6 @@ if (!phone ||!role  || !name || !email || !password) {
    
 }
     
-
-   
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Generate verification token
@@ -239,6 +238,14 @@ export const login=async(req,res)=>{
               "Invalid email or password",
           });
         }
+
+        if (!user.isEmailVerified) {
+          return res.status(403).json({
+            success: false,
+            code: "EMAIL_NOT_VERIFIED",
+            message: "Please verify your email before logging in.",
+          });
+        }
     
 
     
@@ -309,4 +316,3 @@ export const login=async(req,res)=>{
       }
 
 }
-
