@@ -192,10 +192,11 @@ function Cart() {
   // CART CONTENT
   // =========================
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4">
-      <div className="max-w-5xl mx-auto">
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">
-          Shopping Cart ({items.length})
+    <div className="min-h-screen bg-slate-50 px-4 py-7 sm:py-9">
+      <div className="mx-auto max-w-6xl">
+        <p className="mb-1 text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Almost yours</p>
+        <h1 className="mb-6 text-3xl font-bold tracking-tight text-slate-900">
+          Your cart <span className="text-lg font-medium text-slate-500">({items.length} {items.length === 1 ? "item" : "items"})</span>
         </h1>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -222,12 +223,12 @@ function Cart() {
               return (
                 <div
                   key={item._id}
-                  className={`bg-white rounded-xl border p-4 flex gap-4 ${
-                    outOfRange ? "border-red-300" : "border-gray-200"
+                  className={`flex gap-4 rounded-2xl border bg-white p-4 shadow-sm ${
+                    outOfRange ? "border-red-300" : "border-slate-200"
                   }`}
                 >
                   {/* IMAGE */}
-                  <div className="w-24 h-24 bg-gray-100 rounded-lg flex-shrink-0 flex items-center justify-center overflow-hidden">
+                  <div className="flex h-24 w-24 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-50">
                     {variant.images?.[0] ? (
                       <img
                         src={variant.images[0]}
@@ -243,7 +244,7 @@ function Cart() {
                   <div className="flex-1 min-w-0">
                     <Link
                       to={`/product/${variant.product?._id || variant.product}`}
-                      className="font-medium text-gray-900 hover:text-blue-600 truncate block"
+                      className="block truncate font-semibold text-slate-900 hover:text-blue-700"
                     >
                       {variant.product?.name || "Product"}
                     </Link>
@@ -319,8 +320,8 @@ function Cart() {
 
           {/* ORDER SUMMARY */}
           <div className="lg:col-span-1">
-            <div className="bg-white rounded-xl border border-gray-200 p-6 sticky top-24">
-              <h2 className="font-semibold text-gray-900 mb-4">
+            <div className="sticky top-28 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="mb-4 font-semibold text-slate-900">
                 Order Summary
               </h2>
 
@@ -331,7 +332,7 @@ function Cart() {
                 <span>₹{totalAmount.toLocaleString("en-IN")}</span>
               </div>
 
-              <div className="border-t border-gray-200 my-3" />
+              <div className="my-3 border-t border-slate-200" />
 
               <div className="flex justify-between font-semibold text-gray-900 mb-6">
                 <span>Total</span>
@@ -349,14 +350,14 @@ function Cart() {
               <button
                 onClick={handleCheckout}
                 disabled={hasOutOfStockItem || exceedsLimit}
-                className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
+                className="w-full rounded-xl bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
                 Proceed to Checkout
               </button>
 
               <button
                 onClick={() => navigate("/")}
-                className="w-full mt-3 text-blue-600 text-sm hover:underline"
+                className="mt-3 w-full text-sm font-semibold text-blue-700 hover:underline"
               >
                 Continue Shopping
               </button>

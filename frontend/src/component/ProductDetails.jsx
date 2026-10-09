@@ -175,7 +175,7 @@ function ProductDetails() {
     }
         if (cartTotal + Number(selectedVariant.price) * quantity > MAX_ORDER_AMOUNT) {
       toast.error(
-        `Your cart total cannot exceed ₹${MAX_ORDER_AMOUNT.toLocaleString("en-IN")}`
+        `Your cart total cannot exceed ₹${MAX_ORDER_AMOUNT.toLocaleString("en-IN")}. You can add up to ₹${cartRoomLeft.toLocaleString("en-IN")} more.`
       );
       return;
     }
@@ -309,13 +309,13 @@ function ProductDetails() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4">
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen bg-slate-50 px-4 py-6 sm:py-8">
+      <div className="mx-auto max-w-7xl">
         {/* Back Button */}
 
         <button
           onClick={() => navigate(-1)}
-          className="flex items-center gap-2 text-gray-600 hover:text-blue-600 mb-6"
+          className="mb-5 flex items-center gap-2 text-sm font-medium text-slate-600 transition hover:text-blue-700"
         >
           <FaArrowLeft />
           Back
@@ -323,24 +323,39 @@ function ProductDetails() {
 
         {/* Product Container */}
 
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 md:p-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
+          <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:gap-12">
             {/* =========================
                 LEFT - IMAGES
             ========================= */}
 
             <div>
-              <div className="w-full h-[450px] bg-gray-100 rounded-xl flex items-center justify-center overflow-hidden">
+              <div className="flex h-[340px] w-full items-center justify-center overflow-hidden rounded-2xl bg-slate-50 sm:h-[470px]">
                 {selectedImage ? (
                   <img
                     src={selectedImage}
                     alt={product.name}
-                    className="w-full h-full object-contain"
+                    className="h-full w-full object-contain p-5"
                   />
                 ) : (
                   <p className="text-gray-400">No image available</p>
                 )}
               </div>
+              {(selectedVariant?.images || []).length > 1 && (
+                <div className="mt-3 flex gap-3 overflow-x-auto">
+                  {selectedVariant.images.map((image, index) => (
+                    <button
+                      key={`${image}-${index}`}
+                      type="button"
+                      onClick={() => setSelectedImage(image)}
+                      aria-label={`View product image ${index + 1}`}
+                      className={`h-16 w-16 shrink-0 overflow-hidden rounded-xl border bg-white p-1 ${selectedImage === image ? "border-blue-600 ring-2 ring-blue-100" : "border-slate-200"}`}
+                    >
+                      <img src={image} alt="" className="h-full w-full object-contain" />
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* =========================
@@ -348,30 +363,30 @@ function ProductDetails() {
             ========================= */}
 
             <div>
-              <h1 className="text-3xl md:text-4xl font-bold text-gray-900">
+              <h1 className="text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">
                 {product.name}
               </h1>
 
               {product.category?.name && (
-                <p className="text-sm text-blue-600 font-medium mb-2">
-                  Category: {product.category.name}
+                <p className="mb-2 text-sm font-semibold text-blue-700">
+                  {product.category.name}
                 </p>
               )}
 
               {product.subcategory?.name && (
-                <p className="text-sm text-gray-500 font-medium mb-2">
-                  Subcategory: {product.subcategory.name}
+                <p className="mb-2 text-sm font-medium text-slate-500">
+                  {product.subcategory.name}
                 </p>
               )}
 
-              <p className="text-gray-600 mt-4 leading-7">
+              <p className="mt-4 leading-7 text-slate-600">
                 {product.description}
               </p>
 
               {/* Price */}
 
               <div className="mt-6">
-                <span className="text-3xl font-bold text-gray-900">
+                <span className="text-3xl font-extrabold tracking-tight text-slate-900">
                   ₹{Number(currentPrice).toLocaleString("en-IN")}
                 </span>
               </div>
@@ -402,7 +417,7 @@ function ProductDetails() {
 
               {variants.length > 0 && (
                 <div className="mt-7">
-                  <h3 className="font-semibold text-gray-800 mb-3">
+                  <h3 className="mb-3 font-semibold text-slate-900">
                     Select Variant
                   </h3>
 
@@ -416,8 +431,8 @@ function ProductDetails() {
                           onClick={() => handleVariantChange(variant)}
                           className={`w-full text-left border rounded-lg p-4 transition ${
                             isSelected
-                              ? "border-blue-600 bg-blue-50"
-                              : "border-gray-300 hover:border-blue-400"
+                              ? "border-blue-600 bg-blue-50 ring-2 ring-blue-100"
+                              : "border-slate-200 hover:border-blue-400"
                           }`}
                         >
                           <div className="flex items-center justify-between">
@@ -494,11 +509,11 @@ function ProductDetails() {
                   ADD TO CART / BUY NOW
               ========================= */}
 
-              <div className="flex gap-4 mt-7 w-full">
+              <div className="mt-7 flex w-full flex-col gap-3 sm:flex-row">
                 <button
                   onClick={isInCart ? handleGoToCart : handleAddToCart}
                   disabled={currentStock <= 0 || addingToCart}
-                  className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-3 hover:bg-blue-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
+                  className="flex-1 rounded-xl bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
                 >
                   <FaShoppingCart />
                   {currentStock > 0
@@ -513,7 +528,7 @@ function ProductDetails() {
                 <button
                   onClick={handleCheckout}
                   disabled={currentStock <= 0}
-                  className="flex-1 bg-emerald-600 text-white py-3 rounded-lg font-semibold flex items-center justify-center hover:bg-emerald-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
+                  className="flex-1 rounded-xl bg-amber-400 py-3 font-bold text-slate-900 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:bg-slate-300"
                 >
                   Buy Now
                 </button>

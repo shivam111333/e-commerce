@@ -430,23 +430,24 @@ function Checkout() {
 
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4">
-      <div className="max-w-6xl mx-auto">
+    <div className="min-h-screen bg-slate-50 px-4 py-7 sm:py-9">
+      <div className="mx-auto max-w-6xl">
         {/* Back */}
         <button
           type="button"
           onClick={() => navigate(-1)}
-          className="flex items-center gap-2 text-gray-600 hover:text-blue-600 mb-6"
+          className="mb-5 flex items-center gap-2 text-sm font-medium text-slate-600 transition hover:text-blue-700"
         >
           <FaArrowLeft />
           Back
         </button>
 
         {/* Heading */}
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">Checkout</h1>
+        <div className="mb-6 rounded-2xl bg-white px-5 py-5 shadow-sm sm:px-7">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Secure checkout</p>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-900">Checkout</h1>
 
-          <p className="text-gray-500 mt-1">
+          <p className="mt-1 text-slate-500">
             {isBuyNow
               ? "Complete your purchase"
               : "Review your cart and complete your order"}
@@ -477,8 +478,8 @@ function Checkout() {
             <div className="lg:col-span-2 space-y-6">
               {/* SHIPPING ADDRESS */}
 
-              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-                <h2 className="text-xl font-semibold text-gray-900 mb-5">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                <h2 className="mb-5 text-xl font-semibold text-slate-900">
                   Shipping Address
                 </h2>
 
@@ -540,8 +541,8 @@ function Checkout() {
                   PAYMENT METHOD (NEW)
               ================================= */}
 
-              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-                <h2 className="text-xl font-semibold text-gray-900 mb-5">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                <h2 className="mb-5 text-xl font-semibold text-slate-900">
                   Payment Method
                 </h2>
 
@@ -551,7 +552,7 @@ function Checkout() {
                     { value: "online", label: "🏦 Debit/Credit Card/UPI/NetBanking", desc: "Secure payment" },
                    
                   ].map((method) => (
-                    <label key={method.value} className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-blue-50 transition">
+                    <label key={method.value} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition ${paymentMethod === method.value ? "border-blue-500 bg-blue-50/70" : "border-slate-200 hover:border-blue-300 hover:bg-slate-50"}`}>
                       <input
                         type="radio"
                         name="paymentMethod"
@@ -573,7 +574,7 @@ function Checkout() {
                   ORDER ITEMS
               ================================= */}
 
-              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
                 <div className="flex items-center justify-between mb-5">
                   <h2 className="text-xl font-semibold text-gray-900">
                     Order Items
@@ -600,10 +601,10 @@ function Checkout() {
                     return (
                       <div
                         key={variant?._id}
-                        className="flex gap-4 border border-gray-200 rounded-lg p-4"
+                        className="flex gap-4 rounded-xl border border-slate-200 p-4"
                       >
                         {/* Image */}
-                        <div className="w-24 h-24 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center">
+                        <div className="flex h-24 w-24 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-50">
                           {image ? (
                             <img
                               src={image}
@@ -659,8 +660,8 @@ function Checkout() {
             ================================= */}
 
             <div>
-              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm sticky top-24">
-                <h2 className="text-xl font-semibold text-gray-900 mb-5">
+              <div className="sticky top-28 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                <h2 className="mb-5 text-xl font-semibold text-slate-900">
                   Order Summary
                 </h2>
 
@@ -680,12 +681,12 @@ function Checkout() {
                     <span className="text-green-600">Free</span>
                   </div>
 
-                  <div className="border-t border-gray-200 pt-4 mt-4">
+                  <div className="mt-4 border-t border-slate-200 pt-4">
                     <div className="flex justify-between">
                       <span className="text-lg font-semibold">Total</span>
 
-                      <span className="text-2xl font-bold text-gray-900">
-                        ₹{totalAmount}
+                      <span className="text-2xl font-bold text-slate-900">
+                        ₹{totalAmount.toLocaleString("en-IN")}
                       </span>
                     </div>
                   </div>
@@ -707,7 +708,7 @@ function Checkout() {
                     placingOrder || isSubmitting || items.length === 0 || exceedsLimit
                   }
 
-                  className="w-full mt-6 bg-blue-600 text-white py-3 rounded-lg font-semibold flex items-center justify-center gap-2 hover:bg-blue-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
+                  className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-amber-400 py-3 font-bold text-slate-900 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:bg-slate-300"
                 >
                   <FaCheck />
 

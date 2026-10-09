@@ -57,7 +57,7 @@ if (!phone ||!role  || !name || !email || !password) {
    
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // // Generate verification token
+    // Generate verification token
     // const verificationToken = crypto
     //   .randomBytes(32)
     //   .toString("hex");

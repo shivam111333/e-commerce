@@ -1,5 +1,5 @@
 
-import { useState ,useEffect} from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
 import { logout } from "../redux/slices/authSlice";
@@ -43,25 +43,25 @@ function Navbar() {
   
 
  return (
-    <nav className="sticky top-0 z-50 bg-white border-b border-gray-200">
+    <nav className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
         {/* ================= DESKTOP / MAIN NAVBAR ================= */}
-        <div className="h-16 flex items-center gap-6">
+        <div className="h-[72px] flex items-center gap-5">
 
           {/* ================= LOGO ================= */}
           <Link
             to="/"
-            className="text-2xl font-bold text-blue-600 whitespace-nowrap"
+            className="text-2xl font-extrabold tracking-tight text-slate-900 whitespace-nowrap"
           >
-            E-Shop
+            E-Shop<span className="text-amber-400">.</span>
           </Link>
 
           {/* ================= SEARCH ================= */}
           <div className="flex-1 flex justify-center">
             <form
               onSubmit={handleSearchSubmit}
-              className="hidden lg:flex relative w-full max-w-xl"
+              className="hidden lg:flex relative w-full max-w-2xl"
             >
               <input
                 type="text"
@@ -70,17 +70,18 @@ function Navbar() {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="
                   w-full
-                  h-10
+                  h-11
                   pl-4
                   pr-11
-                  rounded-lg
+                  rounded-xl
                   border
-                  border-gray-300
+                  border-slate-200
+                  bg-slate-50
                   text-sm
                   outline-none
                   transition
                   focus:border-blue-500
-                  focus:ring-2
+                  focus:ring-4
                   focus:ring-blue-100
                 "
               />
@@ -106,17 +107,17 @@ function Navbar() {
           <div className="flex items-center gap-5">
 
             {/* ================= CART ================= */}
-          {user?.role === "user"   && <div className="relative">
-  <FaShoppingCart className="text-xl" onClick={()=>{
+          {user?.role === "user"   && <button type="button" aria-label="Open cart" className="relative rounded-lg p-2 text-slate-700 hover:bg-slate-100" onClick={()=>{
     navigate('/cart')
-  }} />
+  }}>
+  <FaShoppingCart className="text-xl" />
 
   {cartCount > 0 && (
-    <span className="absolute -top-2 -right-2 bg-blue-600 text-white text-xs rounded-full min-w-5 h-5 flex items-center justify-center px-1">
+    <span className="absolute -right-1 -top-1 min-w-5 h-5 rounded-full bg-amber-400 px-1 text-xs font-bold text-slate-900 flex items-center justify-center">
       {cartCount}
     </span>
   )}
-</div>}
+</button>}
 
             {/* ================= AUTH ================= */}
             {!isAuthenticated ? (
@@ -334,6 +335,15 @@ function Navbar() {
           </form>
         </div>
 
+        <div className="hidden h-10 items-center gap-7 border-t border-slate-100 text-sm font-medium text-slate-600 md:flex">
+          <Link to="/" className="hover:text-blue-700">Home</Link>
+          <Link to="/products" className="hover:text-blue-700">All Products</Link>
+          {user?.role === "user" && (
+            <Link to="/orders" className="hover:text-blue-700">My Orders</Link>
+          )}
+          <span className="ml-auto text-xs font-normal text-slate-400">Everyday essentials, delivered with care</span>
+        </div>
+
       </div>
     </nav>
   );
@@ -341,4 +351,3 @@ function Navbar() {
 
 
 export default Navbar;
-
