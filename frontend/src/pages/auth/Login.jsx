@@ -48,6 +48,14 @@ const Login = () => {
       }
     } catch (error) {
       if (isAxiosError(error)) {
+        if (error.response?.data?.code === "EMAIL_NOT_VERIFIED") {
+          toast.error(
+            error.response.data.message ||
+              "Please verify your email using the link we sent before logging in."
+          );
+          return;
+        }
+
         toast.error(
           error.response?.data?.message ||
             "Login failed. Please try again."

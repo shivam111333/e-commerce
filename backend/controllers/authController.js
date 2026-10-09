@@ -1,8 +1,56 @@
 import User from '../models/userSchema.js'
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto'
+import sendVerificationEmail from '../utils/sendVerificationEmail.js';
 
 
+export const verifyEmail = async (req, res) => {
+  try {
+    const { token } = req.body;
+
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(token)
+      .digest("hex");
+
+    const user = await User.findOneAndUpdate(
+      {
+        emailVerificationTokenHash: tokenHash,
+        emailVerificationExpires: { $gt: new Date() },
+        isEmailVerified: false,
+      },
+      {
+        $set: { isEmailVerified: true },
+        $unset: {
+          emailVerificationTokenHash: "",
+          emailVerificationExpires: "",
+        },
+      },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        code: "INVALID_OR_EXPIRED_VERIFICATION_TOKEN",
+        message: "This verification link is invalid, expired, or already used.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Email verified successfully. You can now log in.",
+    });
+  } catch (error) {
+    console.error("EMAIL VERIFICATION ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong while verifying your email.",
+    });
+  }
+};
 export const register = async (req,res) => {
   try {
     const {
@@ -58,14 +106,18 @@ if (!phone ||!role  || !name || !email || !password) {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // Generate verification token
-    // const verificationToken = crypto
-    //   .randomBytes(32)
-    //   .toString("hex");
+    const verificationToken = crypto
+      .randomBytes(32)
+      .toString("hex");
+    const emailVerificationTokenHash = crypto
+      .createHash("sha256")
+      .update(verificationToken)
+      .digest("hex");
 
-    // // Token expires after 24 hours
-    // const verificationExpires = new Date(
-    //   Date.now() + 24 * 60 * 60 * 1000
-    // );
+    // Token expires after 24 hours
+    const verificationExpires = new Date(
+      Date.now() + 24 * 60 * 60 * 1000
+    );
   
     //TO Avoid sending role:admin from postman 
     const allowedRoles= ["user" , "vendor"];
@@ -83,26 +135,35 @@ if (!phone ||!role  || !name || !email || !password) {
     
 
    
-    const user = await User.create({
+    await User.create({
       name: name.trim(),
       email: normalizedEmail,
       phone:normalizedPhone,
       password: hashedPassword,
-      role: role
+      role: role,
+      isEmailVerified:false,
+      emailVerificationTokenHash,
+      emailVerificationExpires: verificationExpires,
+      
     });
 
-    
-    // Send verification email
-    // await sendVerificationEmail(
-    //   normalizedEmail,
-    //   verificationToken,
-    //   frontendUrl,
-    // );
+    try {
+      await sendVerificationEmail(normalizedEmail, verificationToken);
+    } catch (emailError) {
+      console.error("VERIFICATION EMAIL ERROR:", emailError);
+
+      return res.status(503).json({
+        success: false,
+        code: "VERIFICATION_EMAIL_FAILED",
+        message:
+          "Your account was created, but the verification email could not be sent. Please try again later.",
+      });
+    }
 
     return res.status(201).json({
       success: true,
       message:
-        "Registration successful.",
+        "Registration successful. Please check your email to verify your account.",
     });
 
   } catch (error) {
@@ -248,3 +309,4 @@ export const login=async(req,res)=>{
       }
 
 }
+

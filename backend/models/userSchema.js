@@ -30,7 +30,22 @@ const userSchema =new mongoose.Schema({
         type:String,
         enum:["active","blocked"],
         default:"active"
-    }
+    },
+    isEmailVerified:{
+      type:Boolean,
+      default:false
+    },
+    emailVerificationTokenHash:{
+      type:String,default:undefined,
+      select:false,
+      index:true
+    },
+    emailVerificationExpires: {
+      type: Date,
+      default: undefined,
+      select: false,
+    },
+
   },
   {
     timestamps: true,

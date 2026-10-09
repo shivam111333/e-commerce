@@ -16,6 +16,7 @@ import Order from "../pages/Customer/Orders.jsx";
 // Auth
 import Login from "../pages/auth/Login.jsx";
 import Register from "../pages/auth/Register.jsx";
+import VerifyEmail from "../pages/auth/VerifyEmail.jsx";
 
 // Admin
 import AdminDashboard from "../pages/admin/AdminDashboard.jsx";
@@ -83,6 +84,11 @@ function AppRoutes() {
       <Route
         path="/register"
         element={<Register />}
+      />
+
+      <Route
+        path="/verify-email"
+        element={<VerifyEmail />}
       />
 
       <Route

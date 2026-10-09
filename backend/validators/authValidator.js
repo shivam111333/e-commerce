@@ -39,6 +39,13 @@ export const registerSchema = yup.object({
   password: password.required("Password is required"),
 });
 
+export const verifyEmailSchema = yup.object({
+  token: yup
+    .string()
+    .matches(/^[a-f0-9]{64}$/i, "Verification token is invalid")
+    .required("Verification token is required"),
+});
+
 // POST /api/auth/login
 export const loginSchema = yup.object({
   email: email.required("Email is required"),

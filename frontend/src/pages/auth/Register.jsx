@@ -28,7 +28,8 @@ function Register() {
       });
 
       toast.success(
-        response.data?.message || "Registration successful."
+        response.data?.message ||
+          "Registration successful. Check your email to verify your account."
       );
       navigate("/login");
     } catch (error) {
