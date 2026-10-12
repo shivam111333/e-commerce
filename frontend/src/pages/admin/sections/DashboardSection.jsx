@@ -79,24 +79,24 @@ function DashboardSection() {
                 Dashboard
             </h2>
 
-            <div className="grid grid-cols-4 gap-5">
+            <div className="grid grid-cols-1 gap-4 min-[480px]:grid-cols-2 xl:grid-cols-4">
 
-                <div className="bg-white p-5 rounded-lg shadow">
+                <div className="min-w-0 rounded-xl border border-slate-100 bg-white p-5 shadow-sm">
                     <h3 className="text-gray-500">Vendors</h3>
                     <p className="text-3xl font-bold mt-2">{vendorCount}</p>
                 </div>
 
-                <div className="bg-white p-5 rounded-lg shadow">
+                <div className="min-w-0 rounded-xl border border-slate-100 bg-white p-5 shadow-sm">
                     <h3 className="text-gray-500">Products</h3>
                     <p className="text-3xl font-bold mt-2">{productCount}</p>
                 </div>
 
-                <div className="bg-white p-5 rounded-lg shadow">
+                <div className="min-w-0 rounded-xl border border-slate-100 bg-white p-5 shadow-sm">
                     <h3 className="text-gray-500">Orders</h3>
                     <p className="text-3xl font-bold mt-2">{orderCount}</p>
                 </div>
 
-                <div className="bg-white p-5 rounded-lg shadow">
+                <div className="min-w-0 rounded-xl border border-slate-100 bg-white p-5 shadow-sm">
                     <h3 className="text-gray-500">Customers</h3>
                     <p className="text-3xl font-bold mt-2">{userCount}</p>
                 </div>
@@ -104,7 +104,7 @@ function DashboardSection() {
                
                 
                
-                <div className="bg-white p-5 rounded-lg shadow">
+                <div className="min-w-0 rounded-xl border border-slate-100 bg-white p-5 shadow-sm">
                     <h3 className="text-gray-500">Categories</h3>
                     <p className="text-3xl font-bold mt-2">{categoryCount}</p>
                 </div>

@@ -10,10 +10,30 @@ export const getVendorProduct = async (req, res) => {
       });
     }
 
-    const product = await Product.find({ vendor: vendor_id }).populate("category","name").populate("subcategory","name")
+    const products = await Product.find({ vendor: vendor_id })
+      .populate("category", "name")
+      .populate("subcategory", "name");
+
+    const variants = await Variant.find({
+      product: { $in: products.map((item) => item._id) },
+    }).select("product images price stock attributes");
+
+    const variantsByProduct = new Map();
+    for (const variant of variants) {
+      const productId = variant.product.toString();
+      const productVariants = variantsByProduct.get(productId) || [];
+      productVariants.push(variant);
+      variantsByProduct.set(productId, productVariants);
+    }
+
+    const productsWithVariants = products.map((product) => ({
+      ...product.toObject(),
+      variants: variantsByProduct.get(product._id.toString()) || [],
+    }));
+
     return res.status(200).json({
       success:true,
-      data:product
+      data:productsWithVariants
     });
   } catch (err) {
     return res.status(500).json({

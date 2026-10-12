@@ -154,14 +154,14 @@ function OrderSection() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-6xl mx-auto px-4">
+    <div className="min-h-screen bg-gray-50 py-4 sm:py-8">
+      <div className="mx-auto w-full max-w-6xl px-0 sm:px-1">
 
         {/* Header */}
-        <div className="flex items-center gap-4 mb-8">
+        <div className="mb-6 flex items-center gap-4 sm:mb-8">
 
           <div>
-            <h1 className="text-3xl font-bold text-gray-800">
+            <h1 className="text-2xl font-bold text-gray-800 sm:text-3xl">
               All Orders
             </h1>
 
@@ -173,7 +173,7 @@ function OrderSection() {
 
         {/* No orders */}
         {orders.length === 0 ? (
-          <div className="bg-white rounded-xl shadow-sm p-10 text-center">
+          <div className="rounded-xl bg-white p-6 text-center shadow-sm sm:p-10">
             <FaBox className="text-5xl text-gray-300 mx-auto mb-4" />
 
             <h2 className="text-xl font-semibold text-gray-700">
@@ -192,11 +192,11 @@ function OrderSection() {
             {orders.map((order) => (
               <div
                 key={order._id}
-                className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden"
+                className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm"
               >
 
                 {/* Order Header */}
-                <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+                <div className="border-b border-gray-200 bg-gray-50 px-4 py-4 sm:px-6">
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
 
                     <div>
@@ -246,7 +246,7 @@ function OrderSection() {
                           )
                         }
                         disabled={order.payment?.method !== "cod"}
-                        className="border rounded-lg px-3 py-2 text-sm"
+                        className="w-full max-w-full rounded-lg border px-3 py-2 text-sm sm:w-auto"
                       >
                         <option value="pending">Pending</option>
                         <option value="processing">Processing</option>
@@ -273,7 +273,7 @@ function OrderSection() {
                 </div>
 
                 {/* Order Items */}
-                <div className="p-6">
+                <div className="p-4 sm:p-6">
 
                   <h2 className="text-lg font-semibold text-gray-800 mb-4">
                     Items
@@ -284,7 +284,7 @@ function OrderSection() {
                     {order.items?.map((item) => (
                       <div
                         key={item._id}
-                        className="border border-gray-200 rounded-lg p-4"
+                        className="rounded-lg border border-gray-200 p-3 sm:p-4"
                       >
 
                         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
@@ -363,7 +363,7 @@ function OrderSection() {
                                   )
                                 }
                                 disabled={order.payment?.method !== "cod"}
-                                className="border rounded-lg px-3 py-2 text-sm"
+                                className="w-full max-w-full rounded-lg border px-3 py-2 text-sm sm:w-auto"
                               >
                                 <option value="pending">Pending</option>
                                 <option value="paid">Paid</option>

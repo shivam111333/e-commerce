@@ -5,11 +5,11 @@ import ProductCard from "../../component/ProductCard";
 import { FaFilter, FaSlidersH } from "react-icons/fa";
 
 function Products() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const search = searchParams.get("search") || "";
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState("all");
+  const selectedCategory = searchParams.get("category") || "all";
   const [sortOrder, setSortOrder] = useState("featured");
   const [loading, setLoading] = useState(false);
 
@@ -52,6 +52,18 @@ function Products() {
       return 0;
     });
 
+  const selectCategory = (categoryId) => {
+    const nextSearchParams = new URLSearchParams(searchParams);
+
+    if (categoryId === "all") {
+      nextSearchParams.delete("category");
+    } else {
+      nextSearchParams.set("category", categoryId);
+    }
+
+    setSearchParams(nextSearchParams);
+  };
+
   return (
     <main className="min-h-screen bg-slate-50">
       <div className="mx-auto max-w-7xl px-4 py-7 sm:px-6 lg:px-8">
@@ -70,13 +82,13 @@ function Products() {
             <select
               id="product-category"
               value={selectedCategory}
-              onChange={(event) => setSelectedCategory(event.target.value)}
+              onChange={(event) => selectCategory(event.target.value)}
               className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
             >
               <option value="all">All categories</option>
               {categories.map((category) => <option key={category._id} value={category._id}>{category.name}</option>)}
             </select>
-            <button type="button" onClick={() => setSelectedCategory("all")} className="mt-4 text-sm font-semibold text-blue-700 hover:text-blue-900">Clear filters</button>
+            <button type="button" onClick={() => selectCategory("all")} className="mt-4 text-sm font-semibold text-blue-700 hover:text-blue-900">Clear filters</button>
           </aside>
 
           <section>

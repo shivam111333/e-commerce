@@ -23,6 +23,7 @@ function VendorProducts() {
     const fetchVendorProducts = async () => {
       try {
         const response = await api.get("/vendor");
+        console.log(response.data.data)
 
         setProducts(response.data.data);
       } catch (err) {
@@ -85,13 +86,7 @@ function VendorProducts() {
             Add Product
           </button>
         </div>
-        <button
-                    onClick={() => navigate("/vendor/dashboard")}
-                    className="flex items-center gap-2 text-gray-600 hover:text-gray-900 w-fit"
-                  >
-                    <FaArrowLeft />
-                    Back to Dashboard
-                  </button>
+    
 
         {/* Search / Filter */}
         <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -200,9 +195,18 @@ function VendorProducts() {
                       {/* Product */}
                       <td className="px-6 py-5">
                         <div className="flex items-center gap-4">
-                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-gray-100">
-                            <FaBoxOpen className="text-gray-400" size={20} />
-                          </div>
+                          <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
+  {product.variants?.[0]?.images?.[0] ? (
+    <img
+      src={product.variants[0].images[0]}
+      alt={product.name}
+      loading="lazy"
+      className="h-full w-full object-contain"
+    />
+  ) : (
+    <FaBoxOpen className="text-gray-400" size={20} />
+  )}
+</div>
 
                           <div>
                             <p className="font-semibold text-gray-800">
@@ -275,9 +279,18 @@ function VendorProducts() {
               {filteredProducts.map((product) => (
                 <div key={product._id} className="p-5">
                   <div className="flex items-start gap-4">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-gray-100">
-                      <FaBoxOpen className="text-gray-400" size={20} />
-                    </div>
+                   <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
+  {product.variants?.[0]?.images?.[0] ? (
+    <img
+      src={product.variants[0].images[0]}
+      alt={product.name}
+      loading="lazy"
+      className="h-full w-full object-contain"
+    />
+  ) : (
+    <FaBoxOpen className="text-gray-400" size={20} />
+  )}
+</div>
 
                     <div className="min-w-0 flex-1">
                       <h3 className="font-semibold text-gray-800">

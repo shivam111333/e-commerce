@@ -264,11 +264,11 @@ function CategoriesSection() {
     <>
       <h1 className="mb-5 text-2xl font-bold text-gray-900">Categories</h1>
 
-      <div className="mb-5 flex items-center justify-between rounded-lg bg-white p-5 shadow">
+      <div className="mb-5 flex flex-col items-stretch justify-between gap-4 rounded-lg bg-white p-4 shadow sm:flex-row sm:items-center sm:p-5">
         <p className="m-0 text-gray-700">Manage Categories and Subcategories</p>
 
         <button
-          className="rounded bg-black px-4 py-2 text-white"
+          className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
           onClick={() => {
             handleOpenCategoryForm();
           }}
@@ -277,7 +277,67 @@ function CategoriesSection() {
         </button>
       </div>
 
-      <div className="overflow-x-auto rounded-lg shadow ring-1 ring-black ring-opacity-5">
+      <div className="space-y-3 md:hidden">
+        {categories.length > 0 ? categories.map((category) => {
+          const productCount = productCounts[category._id] || 0;
+          const categorySubcategories = subcategories[category._id] || [];
+
+          return (
+            <article key={category._id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="break-words font-semibold text-slate-900">{category.name}</h2>
+                  <p className="mt-1 break-words text-sm text-slate-600">
+                    {category.description || "No description"}
+                  </p>
+                </div>
+                {productCount === 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteCategory(category._id)}
+                    className="shrink-0 rounded-lg bg-red-50 p-2 text-red-600 hover:bg-red-100"
+                    aria-label={`Delete ${category.name}`}
+                  >
+                    <FaTrash size={14} />
+                  </button>
+                ) : (
+                  <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                    {productCount} products
+                  </span>
+                )}
+              </div>
+              <div className="mt-4 border-t border-slate-100 pt-3">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Subcategories
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {categorySubcategories.length > 0 ? categorySubcategories
+                    .filter((subcategory) => subcategory?._id)
+                    .map((subcategory) => (
+                      <span key={subcategory._id} className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">
+                        {subcategory.name || "Unnamed"}
+                      </span>
+                    )) : (
+                    <span className="text-sm text-slate-400">None yet</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleOpenSubcategoryForm(category)}
+                    className="flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100"
+                  >
+                    <FaPlus size={9} aria-hidden="true" />
+                    Add
+                  </button>
+                </div>
+              </div>
+            </article>
+          );
+        }) : (
+          <p className="rounded-xl bg-white p-6 text-center text-sm text-slate-500">No categories found</p>
+        )}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-lg shadow ring-1 ring-black ring-opacity-5 md:block">
         <table className="min-w-full divide-y divide-gray-300 bg-white">
           <thead className="bg-gray-50">
             <tr>

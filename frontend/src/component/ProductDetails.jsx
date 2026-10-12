@@ -31,6 +31,8 @@ function ProductDetails() {
   const [cartItems, setCartItems] = useState([]);
   const [addingToCart, setAddingToCart] = useState(false);
 
+  const [isExpanded, setIsExpanded] = useState(false)
+
   // =========================
   // FETCH PRODUCT
   // =========================
@@ -308,48 +310,51 @@ function ProductDetails() {
     });
   };
 
-  return (
+    return (
     <div className="min-h-screen bg-slate-50 px-4 py-6 sm:py-8">
-      <div className="mx-auto max-w-7xl">
-        {/* Back Button */}
-
+      <div className="mx-auto max-w-6xl">
+        {/* Back */}
         <button
           onClick={() => navigate(-1)}
-          className="mb-5 flex items-center gap-2 text-sm font-medium text-slate-600 transition hover:text-blue-700"
+          className="mb-5 inline-flex items-center gap-2 rounded-lg px-1 py-1 text-sm font-medium text-slate-600 transition hover:text-blue-700"
         >
-          <FaArrowLeft />
+          <FaArrowLeft aria-hidden="true" />
           Back
         </button>
 
-        {/* Product Container */}
-
-        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:gap-12">
+        {/* overflow-clip keeps the rounded corners without breaking the sticky image */}
+        <div className="overflow-clip rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <div className="grid grid-cols-1 lg:grid-cols-2">
             {/* =========================
                 LEFT - IMAGES
             ========================= */}
-
-            <div>
-              <div className="flex h-[340px] w-full items-center justify-center overflow-hidden rounded-2xl bg-slate-50 sm:h-[470px]">
+            <div className="bg-gradient-to-br from-slate-50 to-blue-50/60 p-5 sm:p-8 lg:sticky lg:top-6 lg:self-start">
+              <div className="flex h-72 w-full items-center justify-center overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm sm:h-96 lg:h-[460px]">
                 {selectedImage ? (
                   <img
+                    key={selectedImage}
                     src={selectedImage}
                     alt={product.name}
-                    className="h-full w-full object-contain p-5"
+                    className="h-full w-full object-contain p-5 transition-opacity duration-300 starting:opacity-0"
                   />
                 ) : (
-                  <p className="text-gray-400">No image available</p>
+                  <p className="text-sm text-slate-400">No image available</p>
                 )}
               </div>
+
               {(selectedVariant?.images || []).length > 1 && (
-                <div className="mt-3 flex gap-3 overflow-x-auto">
+                <div className="mt-4 flex gap-3 overflow-x-auto pb-1">
                   {selectedVariant.images.map((image, index) => (
                     <button
                       key={`${image}-${index}`}
                       type="button"
                       onClick={() => setSelectedImage(image)}
                       aria-label={`View product image ${index + 1}`}
-                      className={`h-16 w-16 shrink-0 overflow-hidden rounded-xl border bg-white p-1 ${selectedImage === image ? "border-blue-600 ring-2 ring-blue-100" : "border-slate-200"}`}
+                      className={`h-16 w-16 shrink-0 overflow-hidden rounded-xl border bg-white p-1 transition ${
+                        selectedImage === image
+                          ? "border-blue-600 ring-2 ring-blue-100"
+                          : "border-slate-200 opacity-80 hover:opacity-100"
+                      }`}
                     >
                       <img src={image} alt="" className="h-full w-full object-contain" />
                     </button>
@@ -361,101 +366,107 @@ function ProductDetails() {
             {/* =========================
                 RIGHT - PRODUCT INFO
             ========================= */}
+            <div className="flex min-w-0 flex-col p-5 sm:p-8 lg:p-10">
+              {/* Category chips */}
+              {(product.category?.name || product.subcategory?.name) && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {product.category?.name && (
+                    <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                      {product.category.name}
+                    </span>
+                  )}
+                  {product.subcategory?.name && (
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                      {product.subcategory.name}
+                    </span>
+                  )}
+                </div>
+              )}
 
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">
+              <h1 className="mt-3 break-words text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
                 {product.name}
               </h1>
 
-              {product.category?.name && (
-                <p className="mb-2 text-sm font-semibold text-blue-700">
-                  {product.category.name}
-                </p>
-              )}
-
-              {product.subcategory?.name && (
-                <p className="mb-2 text-sm font-medium text-slate-500">
-                  {product.subcategory.name}
-                </p>
-              )}
-
-              <p className="mt-4 leading-7 text-slate-600">
-                {product.description}
-              </p>
-
-              {/* Price */}
-
-              <div className="mt-6">
+              {/* Price + stock */}
+              <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
                 <span className="text-3xl font-extrabold tracking-tight text-slate-900">
                   ₹{Number(currentPrice).toLocaleString("en-IN")}
                 </span>
-              </div>
 
-              {/* Stock */}
-
-              <div className="mt-3">
                 {currentStock > 0 ? (
                   <span
-                    className={`font-medium ${
+                    className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
                       currentStock <= LOW_STOCK
-                        ? "text-orange-600"
-                        : "text-green-600"
+                        ? "bg-orange-50 text-orange-700"
+                        : "bg-green-50 text-green-700"
                     }`}
                   >
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        currentStock <= LOW_STOCK ? "bg-orange-500" : "bg-green-500"
+                      }`}
+                    />
                     {currentStock <= LOW_STOCK
                       ? `Only ${currentStock} left in stock`
-                      : `In Stock (${currentStock} available)`}
+                      : `In stock (${currentStock} available)`}
                   </span>
                 ) : (
-                  <span className="text-red-600 font-medium">Out of Stock</span>
+                  <span className="inline-flex items-center gap-2 rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-700">
+                    <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                    Out of stock
+                  </span>
                 )}
               </div>
+
+              <div className="my-6 border-t border-slate-100" />
 
               {/* =========================
                   VARIANTS
               ========================= */}
-
               {variants.length > 0 && (
-                <div className="mt-7">
-                  <h3 className="mb-3 font-semibold text-slate-900">
-                    Select Variant
+                <div>
+                  <h3 className="mb-3 text-sm font-semibold text-slate-900">
+                    Select variant
                   </h3>
 
-                  <div className="space-y-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     {variants.map((variant) => {
                       const isSelected = selectedVariant?._id === variant._id;
+                      const soldOut = variant.stock <= 0;
 
                       return (
                         <button
                           key={variant._id}
+                          type="button"
                           onClick={() => handleVariantChange(variant)}
-                          className={`w-full text-left border rounded-lg p-4 transition ${
+                          className={`flex flex-col gap-2 rounded-xl border p-3.5 text-left transition ${
                             isSelected
                               ? "border-blue-600 bg-blue-50 ring-2 ring-blue-100"
-                              : "border-slate-200 hover:border-blue-400"
-                          }`}
+                              : "border-slate-200 bg-white hover:border-blue-300 hover:shadow-sm"
+                          } ${soldOut ? "opacity-60" : ""}`}
                         >
-                          <div className="flex items-center justify-between">
-                            <div>
-                              {variant.attributes &&
-                                Object.entries(variant.attributes).map(
-                                  ([key, value]) => (
-                                    <span
-                                      key={key}
-                                      className="mr-4 text-sm text-gray-700"
-                                    >
-                                      <span className="font-medium">
-                                        {key}:
-                                      </span>{" "}
-                                      {value}
-                                    </span>
-                                  ),
-                                )}
-                            </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {variant.attributes &&
+                              Object.entries(variant.attributes).map(([key, value]) => (
+                                <span
+                                  key={key}
+                                  className="rounded-md bg-white px-2 py-0.5 text-xs text-slate-700 ring-1 ring-slate-200"
+                                >
+                                  <span className="font-semibold capitalize">{key}:</span>{" "}
+                                  {value}
+                                </span>
+                              ))}
+                          </div>
 
-                            <span className="font-semibold">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-900">
                               ₹{Number(variant.price).toLocaleString("en-IN")}
                             </span>
+                            {soldOut && (
+                              <span className="text-xs font-medium text-red-600">
+                                Out of stock
+                              </span>
+                            )}
                           </div>
                         </button>
                       );
@@ -467,28 +478,29 @@ function ProductDetails() {
               {/* =========================
                   QUANTITY
               ========================= */}
-
               {currentStock > 0 && (
-                <div className="mt-7">
-                  <h3 className="font-semibold text-gray-800 mb-3">Quantity</h3>
+                <div className="mt-6">
+                  <h3 className="mb-3 text-sm font-semibold text-slate-900">Quantity</h3>
 
-                  <div className="flex items-center">
+                  <div className="inline-flex items-center overflow-hidden rounded-xl border border-slate-200 bg-white">
                     <button
+                      type="button"
                       onClick={decreaseQuantity}
                       disabled={quantity <= 1}
-                      className="w-10 h-10 border border-gray-300 rounded-l-lg hover:bg-gray-100 disabled:opacity-40"
+                      aria-label="Decrease quantity"
+                      className="h-11 w-11 text-lg text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      -
+                      −
                     </button>
-
-                    <div className="w-12 h-10 border-t border-b border-gray-300 flex items-center justify-center font-medium">
+                    <div className="flex h-11 w-12 items-center justify-center border-x border-slate-200 text-sm font-semibold">
                       {quantity}
                     </div>
-
                     <button
+                      type="button"
                       onClick={increaseQuantity}
                       disabled={quantity >= maxAllowed}
-                      className="w-10 h-10 border border-gray-300 rounded-r-lg hover:bg-gray-100 disabled:opacity-40"
+                      aria-label="Increase quantity"
+                      className="h-11 w-11 text-lg text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       +
                     </button>
@@ -496,7 +508,7 @@ function ProductDetails() {
 
                   {/* Why the + button stopped */}
                   {quantity >= maxAllowed && (
-                    <p className="text-xs text-gray-500 mt-2">
+                    <p className="mt-2 text-xs text-slate-500">
                       {currentStock <= MAX_QTY
                         ? `Maximum available: ${currentStock}`
                         : `Maximum ${MAX_QTY} per order`}
@@ -508,14 +520,14 @@ function ProductDetails() {
               {/* =========================
                   ADD TO CART / BUY NOW
               ========================= */}
-
               <div className="mt-7 flex w-full flex-col gap-3 sm:flex-row">
                 <button
+                  type="button"
                   onClick={isInCart ? handleGoToCart : handleAddToCart}
                   disabled={currentStock <= 0 || addingToCart}
-                  className="flex-1 rounded-xl bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 py-3.5 font-semibold text-white shadow-sm transition hover:bg-blue-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-slate-300"
                 >
-                  <FaShoppingCart />
+                  <FaShoppingCart className="shrink-0" aria-hidden="true" />
                   {currentStock > 0
                     ? isInCart
                       ? "Go to Cart"
@@ -526,13 +538,40 @@ function ProductDetails() {
                 </button>
 
                 <button
+                  type="button"
                   onClick={handleCheckout}
                   disabled={currentStock <= 0}
-                  className="flex-1 rounded-xl bg-amber-400 py-3 font-bold text-slate-900 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  className="flex-1 rounded-xl bg-amber-400 py-3.5 font-bold text-slate-900 shadow-sm transition hover:bg-amber-300 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-slate-300"
                 >
                   Buy Now
                 </button>
               </div>
+
+              {/* =========================
+                  DESCRIPTION
+              ========================= */}
+              {product.description && (
+                <div className="mt-8 rounded-2xl bg-slate-50 p-5">
+                  <h3 className="mb-2 text-sm font-semibold text-slate-900">Description</h3>
+                  <p
+                    className={`break-words text-sm leading-7 text-slate-600 ${
+                      !isExpanded ? "line-clamp-3" : ""
+                    }`}
+                  >
+                    {product.description}
+                  </p>
+
+                  {product.description.length > 160 && (
+                    <button
+                      type="button"
+                      onClick={() => setIsExpanded(!isExpanded)}
+                      className="mt-2 text-sm font-semibold text-blue-700 hover:text-blue-900"
+                    >
+                      {isExpanded ? "See less" : "See more"}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>

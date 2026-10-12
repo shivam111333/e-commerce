@@ -1,9 +1,10 @@
 
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
 import { logout } from "../redux/slices/authSlice";
 import { clearCart } from "../redux/slices/cartSlice";
+import api from "../api/axios.jsx";
 
 import {
   FaShoppingCart,
@@ -15,13 +16,32 @@ import {
 function Navbar() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const { user, isAuthenticated } = useSelector((state) => state.auth);
   const cartItems = useSelector((state) => state.cart.items);
 
-
+  const [categories, setCategories] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const cartCount = cartItems.length;
+  const categoryInUrl = new URLSearchParams(location.search).get("category");
+  const activeCategory =
+    location.pathname === "/" || location.pathname === "/products"
+      ? categoryInUrl || "all"
+      : null;
+
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const response = await api.get("/category");
+        setCategories(response.data?.data || []);
+      } catch (error) {
+        console.error("Navbar category loading error:", error);
+      }
+    };
+
+    fetchCategories();
+  }, []);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -52,7 +72,7 @@ function Navbar() {
           {/* ================= LOGO ================= */}
           <Link
             to="/"
-            className="text-2xl font-extrabold tracking-tight text-slate-900 whitespace-nowrap"
+            className="text-4xl font-extrabold tracking-tight text-slate-900 whitespace-nowrap"
           >
             E-Shop<span className="text-amber-400">.</span>
           </Link>
@@ -335,14 +355,38 @@ function Navbar() {
           </form>
         </div>
 
-        <div className="hidden h-10 items-center gap-7 border-t border-slate-100 text-sm font-medium text-slate-600 md:flex">
-          <Link to="/" className="hover:text-blue-700">Home</Link>
-          <Link to="/products" className="hover:text-blue-700">All Products</Link>
-          {user?.role === "user" && (
-            <Link to="/orders" className="hover:text-blue-700">My Orders</Link>
-          )}
-          <span className="ml-auto text-xs font-normal text-slate-400">Everyday essentials, delivered with care</span>
-        </div>
+      {location.pathname === "/" &&  <div className="hidden h-12 items-center gap-2 overflow-x-auto border-t border-slate-100 text-sm font-medium md:flex">
+          <Link
+            to="/"
+            aria-current={
+              location.pathname === "/" && activeCategory === "all"
+                ? "page"
+                : undefined
+            }
+            className={`shrink-0 rounded-xl border px-4 py-2 transition ${
+              location.pathname === "/products" && activeCategory === "all"
+                ? "border-blue-600 bg-blue-600 text-white"
+                : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:text-blue-700"
+            }`}
+          >
+            All Products
+          </Link>
+          {categories.map((category) => (
+            <Link
+              key={category._id}
+              to={`/?category=${encodeURIComponent(category._id)}`}
+              aria-current={activeCategory === category._id ? "page" : undefined}
+              className={`shrink-0 rounded-xl border px-4 py-2 transition ${
+                activeCategory === category._id
+                  ? "border-blue-600 bg-blue-600 text-white"
+                  : "border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:text-blue-700"
+              }`}
+            >
+              {category.name}
+            </Link>
+          ))}
+         
+        </div>}
 
       </div>
     </nav>

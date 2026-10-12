@@ -7,7 +7,6 @@ import api from '../../../api/axios.jsx'
 function VendorsSection() {
     const [vendors,setVendor]=useState([]);
     const [loading,setLoading]=useState(true);
-    const [status,setStatus]=useState([])
     const navigate=useNavigate();
 
     useEffect(()=>{
@@ -39,8 +38,7 @@ function VendorsSection() {
          toast.info("User id and status is required");
          return 
         }
-        const response=await api.patch('/admin',{userId,newStatus});
-        setStatus(response.data)
+        await api.patch('/admin',{userId,newStatus});
         
          
      
@@ -76,15 +74,15 @@ function VendorsSection() {
         
         
         
-  <h1 className="text-2xl mb-5 font-bold text-gray-900 whitespace-nowrap">
+  <h1 className="mb-5 text-xl font-bold text-gray-900 sm:text-2xl">
     Vendors Records
   </h1>
- <div className="sm:flex-auto flex flex-row items-center justify-between gap-4 bg-white rounded-lg shadow p-5 mb-5">
+ <div className="mb-5 flex flex-col items-stretch justify-between gap-4 rounded-lg bg-white p-4 shadow sm:flex-row sm:items-center sm:p-5">
   <p className="m-0 text-gray-700">
     Manage the Vendor
   </p>
   
-  <button className="bg-black text-white px-4 py-2 rounded whitespace-nowrap" onClick={()=>navigate('/register')}>
+  <button className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 sm:whitespace-nowrap" onClick={()=>navigate('/register')}>
    + Add Vendor
   </button>
 </div>
@@ -92,7 +90,42 @@ function VendorsSection() {
 
 
 
-        <div className="overflow-x-auto shadow ring-1 ring-black ring-opacity-5 rounded-lg">
+        <div className="space-y-3 md:hidden">
+          {vendors.length > 0 ? vendors.map((vendor) => (
+            <article key={vendor._id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex min-w-0 items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="truncate font-semibold text-slate-900">{vendor.name}</h2>
+                  <p className="mt-1 break-all text-sm text-slate-600">{vendor.email}</p>
+                  <p className="mt-1 text-sm text-slate-500">{vendor.phone || "No phone number"}</p>
+                </div>
+                <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                  vendor.status === "active" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+                }`}>
+                  {vendor.status}
+                </span>
+              </div>
+              <div className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-3 min-[400px]:flex-row min-[400px]:items-center min-[400px]:justify-between">
+                <span className="text-xs text-slate-500">Joined {formatDate(vendor.createdAt)}</span>
+                <label className="flex items-center gap-2 text-xs font-medium text-slate-600">
+                  Update status
+                  <select
+                    value={vendor.status}
+                    onChange={(event) => handleStatusChange(vendor._id, event.target.value)}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold"
+                  >
+                    <option value="active">Active</option>
+                    <option value="blocked">Blocked</option>
+                  </select>
+                </label>
+              </div>
+            </article>
+          )) : (
+            <p className="rounded-xl bg-white p-6 text-center text-sm text-slate-500">No vendors found</p>
+          )}
+        </div>
+
+        <div className="hidden overflow-x-auto rounded-lg shadow ring-1 ring-black ring-opacity-5 md:block">
          <table className="min-w-full divide-y divide-gray-300 bg-white ">
 
           <thead className="bg-gray-50 ">
