@@ -9,7 +9,9 @@ function Products() {
   const search = searchParams.get("search") || "";
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [subcategoryOptions, setSubcategoryOptions] = useState({ categoryId: null, data: [] });
   const selectedCategory = searchParams.get("category") || "all";
+  const selectedSubcategory = searchParams.get("subcategory") || "";
   const [sortOrder, setSortOrder] = useState("featured");
   const [loading, setLoading] = useState(false);
 
@@ -39,12 +41,53 @@ function Products() {
       .catch((error) => console.error("Error fetching categories:", error));
   }, []);
 
+  useEffect(() => {
+    let isCurrentRequest = true;
+
+    if (selectedCategory === "all") {
+      return () => {
+        isCurrentRequest = false;
+      };
+    }
+
+    api.get(`/subcategory/category/${selectedCategory}`)
+      .then((response) => {
+        if (isCurrentRequest) {
+          setSubcategoryOptions({
+            categoryId: selectedCategory,
+            data: response.data?.data || [],
+          });
+        }
+      })
+      .catch((error) => {
+        if (isCurrentRequest) {
+          console.error("Error fetching subcategories:", error);
+          setSubcategoryOptions({ categoryId: selectedCategory, data: [] });
+        }
+      });
+
+    return () => {
+      isCurrentRequest = false;
+    };
+  }, [selectedCategory]);
+
+  const subcategories = subcategoryOptions.categoryId === selectedCategory
+    ? subcategoryOptions.data
+    : [];
+
   const filteredProducts = products
     .filter((product) => product.name.toLowerCase().includes(search.toLowerCase()))
     .filter((product) => {
       if (selectedCategory === "all") return true;
       const categoryId = typeof product.category === "string" ? product.category : product.category?._id;
       return categoryId === selectedCategory;
+    })
+    .filter((product) => {
+      if (!selectedSubcategory || selectedCategory === "all") return true;
+      const subcategoryId = typeof product.subcategory === "string"
+        ? product.subcategory
+        : product.subcategory?._id;
+      return subcategoryId === selectedSubcategory;
     })
     .sort((first, second) => {
       if (sortOrder === "price-low") return Number(first.variants?.[0]?.price || 0) - Number(second.variants?.[0]?.price || 0);
@@ -57,8 +100,22 @@ function Products() {
 
     if (categoryId === "all") {
       nextSearchParams.delete("category");
+      nextSearchParams.delete("subcategory");
     } else {
       nextSearchParams.set("category", categoryId);
+      nextSearchParams.delete("subcategory");
+    }
+
+    setSearchParams(nextSearchParams);
+  };
+
+  const selectSubcategory = (subcategoryId) => {
+    const nextSearchParams = new URLSearchParams(searchParams);
+
+    if (subcategoryId) {
+      nextSearchParams.set("subcategory", subcategoryId);
+    } else {
+      nextSearchParams.delete("subcategory");
     }
 
     setSearchParams(nextSearchParams);
@@ -88,7 +145,28 @@ function Products() {
               <option value="all">All categories</option>
               {categories.map((category) => <option key={category._id} value={category._id}>{category.name}</option>)}
             </select>
-            <button type="button" onClick={() => selectCategory("all")} className="mt-4 text-sm font-semibold text-blue-700 hover:text-blue-900">Clear filters</button>
+            <label htmlFor="product-subcategory" className="mb-2 mt-4 block text-sm font-medium text-slate-700">Subcategory</label>
+            <select
+              id="product-subcategory"
+              value={selectedCategory === "all" ? "" : selectedSubcategory}
+              onChange={(event) => selectSubcategory(event.target.value)}
+              disabled={selectedCategory === "all"}
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+            >
+              <option value="">
+                {selectedCategory === "all" ? "Select a category first" : "All subcategories"}
+              </option>
+              {subcategories.map((subcategory) => (
+                <option key={subcategory._id} value={subcategory._id}>{subcategory.name}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => selectCategory("all")}
+              className="mt-4 text-sm font-semibold text-blue-700 hover:text-blue-900"
+            >
+              Clear filters
+            </button>
           </aside>
 
           <section>
