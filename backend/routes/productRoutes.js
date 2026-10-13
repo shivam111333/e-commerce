@@ -11,6 +11,7 @@ import {
 
 import {
   getProduct,
+  getTopSellingProducts,
   getProductById,
   createProduct,
   updateProduct,
@@ -19,6 +20,7 @@ import {
 
 // Public
 router.get("/", getProduct);
+router.get("/top-selling", getTopSellingProducts);
 router.get("/:id", validate(idParamSchema(), "params"), getProductById);
 
 // Vendor only

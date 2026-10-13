@@ -1,5 +1,6 @@
 import Product from "../models/productSchema.js";
 import Variant from "../models/variantSchema.js";
+import Order from "../models/orderSchema.js";
 // import Category from '../models/categorySchema.js'
 import Subcategory from '../models/subcategorySchema.js'
 import User from '../models/userSchema.js'
@@ -61,6 +62,41 @@ export const getProduct = async (req, res) => {
 
     return res.status(200).json({ success: true, data: productsWithVariants });
   } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+export const getTopSellingProducts = async (req, res) => {
+  try {
+    const products = await Order.aggregate([
+      { $unwind: "$items" },
+      {
+        $match: {
+          "items.status": "delivered",
+          "items.paymentStatus": "paid",
+        },
+      },
+      {
+        $lookup: {
+          from: "variants",
+          localField: "items.variant",
+          foreignField: "_id",
+          as: "variant",
+        },
+      },
+      { $unwind: "$variant" },
+      {
+        $group: {
+          _id: "$variant.product",
+          soldQuantity: { $sum: "$items.quantity" },
+        },
+      },
+      { $sort: { soldQuantity: -1, _id: 1 } },
+    ]);
+
+    return res.status(200).json({ success: true, data: products });
+  } catch (err) {
+    console.error("GET TOP-SELLING PRODUCTS ERROR:", err);
     return res.status(500).json({ success: false, message: err.message });
   }
 };
@@ -240,4 +276,3 @@ export const deleteProduct = async (req, res) => {
     return res.status(500).json({ success: false, message: err.message });
   }
 };
-

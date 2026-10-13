@@ -18,6 +18,7 @@ function Home() {
   const [categories, setCategories] = useState([]);
   const [subcategories, setSubcategories] = useState([]);
   const [products, setProducts] = useState([]);
+  const [salesByProduct, setSalesByProduct] = useState({});
 
   const [heroSlideIndex, setHeroSlideIndex] = useState(0);
   const [isHeroPaused, setIsHeroPaused] = useState(false);
@@ -26,11 +27,12 @@ function Home() {
   const [error, setError] = useState("");
 
   useEffect(() => {
+
     const fetchCatalogOptions = async () => {
       try {
         const [categoryResponse, subcategoryResponse] = await Promise.all([
           api.get("/category"),
-          api.get("/subcategory"),
+          api.get("/subcategory")
         ]);
         setCategories(categoryResponse.data?.data || []);
         setSubcategories(subcategoryResponse.data?.data || []);
@@ -51,20 +53,32 @@ function Home() {
         setLoading(true);
         setError("");
 
-        const response =
+        const [productResponse, salesResponse] = await Promise.all([
           selectedCategory === "all"
-            ? await api.get("/product/")
-            : await api.get(`/category/all/${selectedCategory}`);
+            ? api.get("/product/")
+            : api.get(`/category/all/${selectedCategory}`),
+          api.get("/product/top-selling"),
+        ]);
 
         setHeroSlideIndex(0);
-        setProducts(response.data.data || []);
+        setProducts(productResponse.data.data || []);
+        setSalesByProduct(
+          Object.fromEntries(
+            (salesResponse.data?.data || []).map(({ _id, soldQuantity }) => [
+              _id,
+              soldQuantity,
+            ])
+          )
+        );
       } catch (error) {
         if (error.response?.status === 404) {
           setProducts([]);
+          setSalesByProduct({});
         } else {
           console.error("Product loading error:", error);
           setError("Failed to load products");
           setProducts([]);
+          setSalesByProduct({});
         }
       } finally {
         setLoading(false);
@@ -82,6 +96,34 @@ function Home() {
     return subcategoryId === selectedSubcategory;
   });
 
+  const getLowestInStockPrice = (product) => {
+    const prices = (product.variants || [])
+      .filter((variant) => Number(variant.stock) > 0)
+      .map((variant) => Number(variant.price))
+      .filter((price) => Number.isFinite(price) && price >= 0);
+
+    return prices.length ? Math.min(...prices) : null;
+  };
+
+  const budgetRanges = [
+    { title: "Under ₹500", min: 0, max: 500 },
+    { title: "₹500 - ₹999", min: 500, max: 1000 },
+    { title: "₹1,000 - ₹1,999", min: 1000, max: 2000 },
+  
+  ];
+  const budgetSections = budgetRanges.map((range) => ({
+    ...range,
+    products: visibleProducts
+      .filter((product) => {
+        const price = getLowestInStockPrice(product);
+        return price !== null && price >= range.min && price < range.max;
+      })
+      .sort((first, second) =>
+        getLowestInStockPrice(first) - getLowestInStockPrice(second)
+      )
+      .slice(0, 4),
+  }));
+
   const getId = (value) => (typeof value === "string" ? value : value?._id);
   const catalogSections = categories.flatMap((category) =>
     subcategories
@@ -93,6 +135,9 @@ function Home() {
           .filter((product) =>
             getId(product.category) === category._id &&
             getId(product.subcategory) === subcategory._id
+          )
+          .sort((first, second) =>
+            (salesByProduct[second._id] || 0) - (salesByProduct[first._id] || 0)
           )
           .slice(0, 4),
       }))
@@ -245,7 +290,7 @@ function Home() {
                   ? "Explore our catalog"
                   : categories.find((category) => category._id === selectedCategory)?.name || "Category picks"}
               </h2>
-              <p className="mt-1 text-sm text-slate-500">Discover four hand-picked products from each collection.</p>
+              <p className="mt-1 text-sm text-slate-500">Discover  hand-picked products from each collection.</p>
             </div>
             <button
               type="button"
@@ -286,13 +331,13 @@ function Home() {
                       type="button"
                       onClick={() => navigate(`/products?category=${encodeURIComponent(category._id)}&subcategory=${encodeURIComponent(subcategory._id)}`)}
                       aria-label={`Explore ${subcategory.name} products`}
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700 transition hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-700"
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-400 text-slate-950 transition hover:bg-amber-300 focus:outline-none focus:ring-2 focus:ring-blue-700"
                     >
                       <FaChevronRight aria-hidden="true" />
                     </button>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    {sectionProducts.map((product) => {
+                    {sectionProducts.map((product, productIndex) => {
                       const image = product.variants?.[0]?.images?.[0];
                       const price = Number(product.variants?.[0]?.price ?? product.price);
 
@@ -304,7 +349,7 @@ function Home() {
                           aria-label={`View ${product.name}`}
                           className="group min-w-0 overflow-hidden rounded-xl bg-white p-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-700"
                         >
-                          <span className="flex aspect-square items-center justify-center overflow-hidden rounded-lg bg-slate-50">
+                          <span className="relative flex aspect-square items-center justify-center overflow-hidden rounded-lg bg-slate-50">
                             {image ? (
                               <img
                                 src={image}
@@ -315,6 +360,11 @@ function Home() {
                             ) : (
                               <span className="px-2 text-center text-xs text-slate-400">Image coming soon</span>
                             )}
+                            {productIndex === 0 && salesByProduct[product._id] > 0 && (
+                              <span className="absolute left-1 top-1 rounded-full bg-blue-700 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm">
+                                Best seller
+                              </span>
+                            )}
                           </span>
                           <span className="mt-2 block truncate text-xs font-semibold text-slate-800">{product.name}</span>
                           <span className="mt-0.5 block text-xs font-bold text-slate-950">
@@ -324,6 +374,76 @@ function Home() {
                       );
                     })}
                   </div>
+                </section>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="space-y-5 pb-8">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Find a great deal</p>
+            <h2 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Shop by budget</h2>
+            <p className="mt-1 text-sm text-slate-500">Choose a price range and tap a product to see its details.</p>
+          </div>
+          {loading ? (
+            <p className="py-8 text-center text-slate-500">Loading budget picks...</p>
+          ) : !error && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {budgetSections.map((section, index) => (
+                <section
+                  key={section.title}
+                  aria-labelledby={`budget-${index}`}
+                  className={`rounded-2xl border p-3 shadow-sm ${
+                    index % 2 === 0
+                      ? "border-sky-100 bg-gradient-to-br from-white via-sky-50 to-blue-100"
+                      : "border-blue-100 bg-gradient-to-br from-white via-blue-50 to-indigo-50"
+                  }`}
+                >
+                  <h3 id={`budget-${index}`} className="mb-3 text-base font-bold text-slate-950">
+                    {section.title}
+                  </h3>
+                  {section.products.length > 0 ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      {section.products.map((product) => {
+                        const image = product.variants?.find(
+                          (variant) => Number(variant.stock) > 0 && variant.images?.[0]
+                        )?.images?.[0];
+                        const price = getLowestInStockPrice(product);
+
+                        return (
+                          <button
+                            key={product._id}
+                            type="button"
+                            onClick={() => navigate(`/product/${product._id}`)}
+                            aria-label={`View ${product.name}`}
+                            className="group min-w-0 overflow-hidden rounded-xl bg-white p-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-700"
+                          >
+                            <span className="flex aspect-square items-center justify-center overflow-hidden rounded-lg bg-slate-50">
+                              {image ? (
+                                <img
+                                  src={image}
+                                  alt=""
+                                  loading="lazy"
+                                  className="h-full w-full object-contain p-1 transition duration-200 group-hover:scale-105"
+                                />
+                              ) : (
+                                <span className="px-2 text-center text-xs text-slate-400">Image coming soon</span>
+                              )}
+                            </span>
+                            <span className="mt-2 block truncate text-xs font-semibold text-slate-800">{product.name}</span>
+                            <span className="mt-0.5 block text-xs font-bold text-slate-950">
+                              From ₹{price.toLocaleString("en-IN")}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="rounded-xl bg-white/70 px-3 py-8 text-center text-sm text-slate-500">
+                      No products in this range yet.
+                    </p>
+                  )}
                 </section>
               ))}
             </div>
