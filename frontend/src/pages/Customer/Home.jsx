@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import api from "../../api/axios";
-import ProductCard from "../../component/ProductCard";
 import {
   FaArrowRight,
   FaCheckCircle,
@@ -15,7 +14,9 @@ function Home() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const selectedCategory = searchParams.get("category") || "all";
+  const selectedSubcategory = searchParams.get("subcategory") || "";
   const [categories, setCategories] = useState([]);
+  const [subcategories, setSubcategories] = useState([]);
   const [products, setProducts] = useState([]);
 
   const [heroSlideIndex, setHeroSlideIndex] = useState(0);
@@ -25,16 +26,20 @@ function Home() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const fetchCategories = async () => {
+    const fetchCatalogOptions = async () => {
       try {
-        const response = await api.get("/category");
-        setCategories(response.data?.data || []);
-      } catch (categoryError) {
-        console.error("Category loading error:", categoryError);
+        const [categoryResponse, subcategoryResponse] = await Promise.all([
+          api.get("/category"),
+          api.get("/subcategory"),
+        ]);
+        setCategories(categoryResponse.data?.data || []);
+        setSubcategories(subcategoryResponse.data?.data || []);
+      } catch (catalogError) {
+        console.error("Catalog categories loading error:", catalogError);
       }
     };
 
-    fetchCategories();
+    fetchCatalogOptions();
   }, []);
 
   // =========================
@@ -69,7 +74,31 @@ function Home() {
     fetchProducts();
   }, [selectedCategory]);
 
-  const heroSlides = products.slice(0,8);
+  const visibleProducts = products.filter((product) => {
+    if (!selectedSubcategory) return true;
+    const subcategoryId = typeof product.subcategory === "string"
+      ? product.subcategory
+      : product.subcategory?._id;
+    return subcategoryId === selectedSubcategory;
+  });
+
+  const getId = (value) => (typeof value === "string" ? value : value?._id);
+  const catalogSections = categories.flatMap((category) =>
+    subcategories
+      .filter((subcategory) => getId(subcategory.category) === category._id)
+      .map((subcategory) => ({
+        category,
+        subcategory,
+        products: visibleProducts
+          .filter((product) =>
+            getId(product.category) === category._id &&
+            getId(product.subcategory) === subcategory._id
+          )
+          .slice(0, 4),
+      }))
+      .filter((section) => section.products.length > 0)
+  );
+  const heroSlides = visibleProducts.slice(0, 8);
   const activeHeroSlide = heroSlides.length
     ? heroSlides[heroSlideIndex % heroSlides.length]
     : null;
@@ -207,17 +236,96 @@ function Home() {
     )}
   </section>
 )}
-        <section className="pb-8">
+        <section className="space-y-6 pb-8">
           <div className="mb-5 flex items-end justify-between gap-4">
-            <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Picked for you</p><h2 className="mt-1 text-2xl font-bold tracking-tight">{selectedCategory === "all" ? "Popular right now" : categories.find((category) => category._id === selectedCategory)?.name || "Category picks"}</h2></div>
-            <button type="button" onClick={() => navigate("/products")} className="hidden text-sm font-semibold text-blue-700 hover:text-blue-900 sm:block">Explore products <FaArrowRight className="ml-1 inline" size={11} /></button>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Shop by category</p>
+              <h2 className="mt-1 text-2xl font-bold tracking-tight">
+                {selectedCategory === "all"
+                  ? "Explore our catalog"
+                  : categories.find((category) => category._id === selectedCategory)?.name || "Category picks"}
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">Discover four hand-picked products from each collection.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate("/products")}
+              className="hidden text-sm font-semibold text-blue-700 hover:text-blue-900 sm:block"
+            >
+              Explore all products <FaArrowRight className="ml-1 inline" size={11} />
+            </button>
           </div>
           {loading && <p className="py-12 text-center text-slate-500">Loading products...</p>}
           {error && <p className="rounded-xl bg-red-50 p-5 text-center text-red-700">{error}</p>}
-          {!loading && !error && products.length === 0 && <p className="rounded-xl border border-slate-200 bg-white p-10 text-center text-slate-500">No products found.</p>}
-          {!loading && !error && products.length > 0 && (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {products.slice(0, 8).map((product) => <ProductCard key={product._id} product={product} />)}
+          {!loading && !error && visibleProducts.length === 0 && <p className="rounded-xl border border-slate-200 bg-white p-10 text-center text-slate-500">No products found.</p>}
+          {!loading && !error && visibleProducts.length > 0 && catalogSections.length === 0 && (
+            <p className="rounded-xl border border-slate-200 bg-white p-10 text-center text-slate-500">
+              No category collections are available yet. <button type="button" onClick={() => navigate("/products")} className="font-semibold text-blue-700 hover:text-blue-900">Browse all products</button>
+            </p>
+          )}
+          {!loading && !error && catalogSections.length > 0 && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {catalogSections.map(({ category, subcategory, products: sectionProducts }, index) => (
+                <section
+                  key={subcategory._id}
+                  aria-labelledby={`catalog-${subcategory._id}`}
+                  className={`rounded-2xl border p-3 shadow-sm ${
+                    index % 2 === 0
+                      ? "border-sky-100 bg-gradient-to-br from-white via-sky-50 to-blue-100"
+                      : "border-blue-100 bg-gradient-to-br from-white via-blue-50 to-indigo-50"
+                  }`}
+                >
+                  <div className="mb-2 flex min-h-11 items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p id={`catalog-${subcategory._id}`} className="line-clamp-2 text-base font-bold leading-5 text-slate-950">
+                        Top picks in {subcategory.name}
+                      </p>
+                      <p className="mt-0.5 truncate text-[11px] font-semibold text-blue-700">{category.name}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/products?category=${encodeURIComponent(category._id)}&subcategory=${encodeURIComponent(subcategory._id)}`)}
+                      aria-label={`Explore ${subcategory.name} products`}
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700 transition hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-700"
+                    >
+                      <FaChevronRight aria-hidden="true" />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {sectionProducts.map((product) => {
+                      const image = product.variants?.[0]?.images?.[0];
+                      const price = Number(product.variants?.[0]?.price ?? product.price);
+
+                      return (
+                        <button
+                          key={product._id}
+                          type="button"
+                          onClick={() => navigate(`/product/${product._id}`)}
+                          aria-label={`View ${product.name}`}
+                          className="group min-w-0 overflow-hidden rounded-xl bg-white p-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-700"
+                        >
+                          <span className="flex aspect-square items-center justify-center overflow-hidden rounded-lg bg-slate-50">
+                            {image ? (
+                              <img
+                                src={image}
+                                alt=""
+                                loading="lazy"
+                                className="h-full w-full object-contain p-1 transition duration-200 group-hover:scale-105"
+                              />
+                            ) : (
+                              <span className="px-2 text-center text-xs text-slate-400">Image coming soon</span>
+                            )}
+                          </span>
+                          <span className="mt-2 block truncate text-xs font-semibold text-slate-800">{product.name}</span>
+                          <span className="mt-0.5 block text-xs font-bold text-slate-950">
+                            {Number.isFinite(price) ? `₹${price.toLocaleString("en-IN")}` : "Price unavailable"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
             </div>
           )}
         </section>
