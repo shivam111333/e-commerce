@@ -1,15 +1,17 @@
 import axios from "axios";
-import { store } from "../redux/store.js";
+// import { toast } from "react-toastify";
+import { persistor, store } from "../redux/store.js";
+import { logout } from "../redux/slices/authSlice.js";
 
 const api = axios.create({
   baseURL: "http://localhost:3000/api",
 });
 
+let isHandlingExpiredSession = false;
+
 api.interceptors.request.use(
   (config) => {
     const token = store.getState().auth?.user?.token;
-
-    // console.log("Interceptor token:", token);
 
     if (token) {
       config.headers = config.headers || {};
@@ -18,7 +20,28 @@ api.interceptors.request.use(
 
     return config;
   },
-  (error) => {
+  (error) => Promise.reject(error)
+);
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const token = store.getState().auth?.user?.token;
+    const isLoginRequest = error.config?.url?.includes("/auth/login");
+
+    if (
+      error.response?.status === 401 &&
+      token &&
+      !isLoginRequest &&
+      !isHandlingExpiredSession
+    ) {
+      isHandlingExpiredSession = true;
+      store.dispatch(logout());
+      sessionStorage.setItem("sessionExpired", "true");
+      await persistor.flush();
+      window.location.assign("/login");
+    }
+
     return Promise.reject(error);
   }
 );

@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { isAxiosError } from "axios";
 import { FaEye, FaEyeSlash } from "react-icons/fa";
@@ -16,6 +16,13 @@ const Login = () => {
   const dispatch = useDispatch();
 
   const [show, setShow] = useState(false);
+
+  useEffect(() => {
+    if (sessionStorage.getItem("sessionExpired") === "true") {
+      sessionStorage.removeItem("sessionExpired");
+      toast.info("Your session expired. Please log in again.");
+    }
+  }, []);
 
   const handleLogin = async (values, { setSubmitting }) => {
     try {
