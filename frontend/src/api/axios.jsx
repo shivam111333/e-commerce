@@ -4,7 +4,8 @@ import { persistor, store } from "../redux/store.js";
 import { logout } from "../redux/slices/authSlice.js";
 
 const api = axios.create({
-  baseURL: "http://localhost:3000/api",
+  baseURL:
+    import.meta.env.VITE_API_BASE_URL,
 });
 
 let isHandlingExpiredSession = false;
