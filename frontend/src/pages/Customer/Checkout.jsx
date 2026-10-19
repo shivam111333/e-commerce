@@ -16,7 +16,7 @@ function Checkout() {
   const location = useLocation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
-
+   let paymentVerificationStarted = false;
   const { isAuthenticated } = useSelector((state) => state.auth);
 
   // ==========================================
@@ -302,6 +302,8 @@ function Checkout() {
           handler: async function (
             paymentResponse
           ) {
+            // eslint-disable-next-line react-hooks/immutability
+            paymentVerificationStarted = true;
             try {
               // -----------------------------------
               // Step 5C: Verify payment
@@ -371,15 +373,43 @@ function Checkout() {
             }
           },
 
-          modal: {
-            ondismiss: function () {
-              setPlacingOrder(false);
+         modal: {
+  ondismiss: async function () {
+    // If the successful-payment handler has started, let its verification
+    // flow finish rather than starting a competing dismissal request.
+    if (paymentVerificationStarted) {
+      return;
+    }
 
-              toast.info(
-                "Payment was cancelled."
-              );
-            },
-          },
+    try {
+      const response = await api.post("/payment/razorpay/dismiss", {
+        razorpay_order_id: razorpayOrder.razorpayOrderId,
+      });
+
+      const status = response.data?.data?.status;
+
+if (status === "cancelled") {
+  toast.info("Checkout closed without a payment attempt.");
+} else if (status === "failed") {
+  toast.error("All payment attempts failed. You can try again.");
+} else if (status === "captured" || status === "paid") {
+  toast.success("Payment received.");
+} else if (status === "authorized" || status === "pending") {
+  toast.info("Payment is still being checked.");
+} else {
+  toast.info("Checkout closed. Payment status is being checked.");
+}
+    } catch (error) {
+      console.error("Checkout dismissal status check failed:", error);
+
+      toast.info(
+        "Checkout closed, but payment status could not be checked right now."
+      );
+    } finally {
+      setPlacingOrder(false);
+    }
+  },
+},
 
           theme: {
             color: "#3399cc",

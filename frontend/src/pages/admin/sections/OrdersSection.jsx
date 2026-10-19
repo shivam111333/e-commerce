@@ -52,8 +52,7 @@ function OrderSection() {
       case "confirmed":
         return "bg-blue-100 text-blue-700";
 
-      case "processing":
-        return "bg-indigo-100 text-indigo-700";
+     
 
       case "shipped":
         return "bg-purple-100 text-purple-700";
@@ -249,7 +248,7 @@ function OrderSection() {
                         className="w-full max-w-full rounded-lg border px-3 py-2 text-sm sm:w-auto"
                       >
                         <option value="pending">Pending</option>
-                        <option value="processing">Processing</option>
+                      
                         <option value="paid">Paid</option>
                         <option value="failed">Failed</option>
                         <option value="partially_refunded">

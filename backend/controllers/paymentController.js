@@ -21,16 +21,20 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Payment (gateway) states only ever move forward
 const PAYMENT_RANK = {
-  pending: 0,
-  failed: 1,
-  authorized: 2,
-  captured: 3,
-  partially_refunded: 4,
-  refunded: 5,
+  created: 0,
+  pending: 1,
+  failed: 2,
+  cancelled: 2,
+  authorized: 3,
+  captured: 4,
+  partially_refunded: 5,
+  refunded: 6,
 };
 
 const statusesBelow = (status) =>
-  Object.keys(PAYMENT_RANK).filter((s) => PAYMENT_RANK[s] < PAYMENT_RANK[status]);
+  Object.keys(PAYMENT_RANK).filter(
+    (s) => PAYMENT_RANK[s] < PAYMENT_RANK[status],
+  );
 
 // Gateway status -> business-level status shown on Order and items
 const ORDER_STATUS_FOR = {
@@ -43,9 +47,9 @@ const ORDER_STATUS_FOR = {
 // An order status is only overwritten when it is currently one of these
 // (so a late event can never undo "paid", or a later refund)
 const ORDER_STATUS_ALLOWED_FROM = {
-  pending: ["pending", "failed"],
-  failed: ["pending"],
-  paid: ["pending", "failed"],
+  pending: ["created", "pending", "failed", "cancelled"],
+  failed: ["created", "pending"],
+  paid: ["created", "pending", "failed", "cancelled"],
 };
 
 /**
@@ -58,7 +62,7 @@ const finalizePayment = async (payment) => {
   const claimed = await Payment.findOneAndUpdate(
     { _id: payment._id, finalizedAt: null },
     { $set: { finalizedAt: new Date() } },
-    { new: true }
+    { new: true },
   );
 
   if (!claimed) return false;
@@ -76,7 +80,7 @@ const finalizePayment = async (payment) => {
 
       const result = await Variant.updateOne(
         { _id: item.variant, stock: { $gte: item.quantity } },
-        { $inc: { stock: -item.quantity } }
+        { $inc: { stock: -item.quantity } },
       );
 
       if (result.modifiedCount === 0) {
@@ -90,7 +94,7 @@ const finalizePayment = async (payment) => {
     if (outOfStockItemIds.length > 0) {
       await Payment.updateOne(
         { _id: payment._id },
-        { $set: { needsRefund: true, refundAmount } }
+        { $set: { needsRefund: true, refundAmount } },
       );
 
       await Order.updateOne(
@@ -102,7 +106,7 @@ const finalizePayment = async (payment) => {
             "items.$[i].cancelledAt": new Date(),
           },
         },
-        { arrayFilters: [{ "i._id": { $in: outOfStockItemIds } }] }
+        { arrayFilters: [{ "i._id": { $in: outOfStockItemIds } }] },
       );
     }
   } catch (err) {
@@ -110,12 +114,12 @@ const finalizePayment = async (payment) => {
     for (const r of reduced) {
       await Variant.updateOne(
         { _id: r.variant },
-        { $inc: { stock: r.quantity } }
+        { $inc: { stock: r.quantity } },
       );
     }
     await Payment.updateOne(
       { _id: payment._id },
-      { $set: { finalizedAt: null } }
+      { $set: { finalizedAt: null } },
     );
     throw err;
   }
@@ -156,13 +160,14 @@ const settlePayment = async (paymentId, target, rzp) => {
   const advanced = await Payment.findOneAndUpdate(
     { _id: paymentId, status: { $in: statusesBelow(target) } },
     { $set: set },
-    { new: true }
+    { new: true },
   );
 
   const current = advanced || (await Payment.findById(paymentId));
 
   // authorized or captured: make sure stock was reduced (once)
-  if (["authorized", "captured"].includes(current.status)) {
+  // Finalize stock only after Razorpay confirms capture.
+  if (current.status === "captured") {
     await finalizePayment(current);
   }
 
@@ -178,16 +183,137 @@ const settlePayment = async (paymentId, target, rzp) => {
           "payment.status": orderStatus,
           "items.$[].paymentStatus": orderStatus,
         },
-      }
+      },
     );
   }
 
   return { settled: true };
 };
 
+const markOnlinePaymentPending = async (payment) => {
+  const now = new Date();
+  const movedToPending = await Payment.findOneAndUpdate(
+    { _id: payment._id, status: "created", method: "online" },
+    {
+      $set: {
+        status: "pending",
+        pendingAt: now,
+      },
+    },
+    { new: true },
+  );
+
+  if (movedToPending) {
+    await Order.updateOne(
+      { _id: movedToPending.order, "payment.status": "created" },
+      {
+        $set: {
+          "payment.status": "pending",
+          "items.$[].paymentStatus": "pending",
+        },
+      },
+    );
+    return true;
+  }
+
+  if (payment.status === "pending" && !payment.pendingAt) {
+    await Payment.updateOne(
+      { _id: payment._id, status: "pending", pendingAt: null },
+      { $set: { pendingAt: now } },
+    );
+  }
+
+  return false;
+};
+
+/**
+ * Reconcile an open or authorized local payment against Razorpay's attempts.
+ * Authorized payments remain authorized unless Razorpay reports capture.
+ */
+export const reconcilePendingRazorpayPayment = async (paymentId) => {
+  const payment = await Payment.findById(paymentId);
+
+  if (!payment) {
+    return { reconciled: false, reason: "not_found" };
+  }
+
+  if (
+    !["created", "pending", "authorized"].includes(payment.status) ||
+    payment.method !== "online"
+  ) {
+    return { reconciled: false, reason: "not_open" };
+  }
+
+  if (!payment.razorpayOrderId) {
+    throw new Error(
+      `Pending online payment ${payment._id} has no Razorpay order ID`,
+    );
+  }
+
+  const response = await razorpay.orders.fetchPayments(payment.razorpayOrderId);
+
+  if (!Array.isArray(response?.items)) {
+    throw new Error(
+      `Razorpay returned an invalid payment list for ${payment.razorpayOrderId}`,
+    );
+  }
+
+  const attempts = response.items.filter(
+    (attempt) => attempt.order_id === payment.razorpayOrderId,
+  );
+
+  const successfulAttempt =
+    attempts.find((attempt) => attempt.status === "captured") ||
+    attempts.find((attempt) => attempt.status === "authorized");
+
+  if (successfulAttempt) {
+    const result = await settlePayment(
+      payment._id,
+      successfulAttempt.status,
+      successfulAttempt,
+    );
+
+    if (!result.settled) {
+      return { reconciled: false, reason: result.reason };
+    }
+
+    return {
+      reconciled: true,
+      status: successfulAttempt.status,
+      razorpayPaymentId: successfulAttempt.id,
+    };
+  }
+
+  if (attempts.length === 0) {
+    if (payment.status === "authorized") {
+      return { reconciled: false, reason: "authorization_unresolved" };
+    }
+
+    return { reconciled: false, reason: "no_attempts" };
+  }
+
+  if (attempts.every((attempt) => attempt.status === "failed")) {
+    if (payment.status === "authorized") {
+      return { reconciled: false, reason: "authorization_unresolved" };
+    }
+
+    return { reconciled: false, reason: "all_attempts_failed" };
+  }
+
+  if (payment.status === "authorized") {
+    return { reconciled: false, reason: "authorization_unresolved" };
+  }
+
+  // There is an attempt, but no final successful or all-failed result.
+  // Move created -> pending only because the server checked Razorpay.
+  await markOnlinePaymentPending(payment);
+
+  return { reconciled: false, reason: "attempt_in_progress" };
+};
+
 /* =========================================================
    1. CREATE RAZORPAY ORDER
-      Creates the Razorpay order + a pending Order + a pending Payment
+      Creates the Razorpay order + a created Order + a created Payment
    ========================================================= */
 export const createRazorpayOrder = async (req, res) => {
   try {
@@ -195,10 +321,19 @@ export const createRazorpayOrder = async (req, res) => {
     const userId = req.user._id;
 
     if (!userId) {
-      return res.status(401).json({ success: false, message: "User not found" });
+      return res
+        .status(401)
+        .json({ success: false, message: "User not found" });
     }
 
-    const addressFields = ["name", "phone", "address", "city", "state", "pincode"];
+    const addressFields = [
+      "name",
+      "phone",
+      "address",
+      "city",
+      "state",
+      "pincode",
+    ];
 
     if (
       !shippingAddress ||
@@ -211,7 +346,9 @@ export const createRazorpayOrder = async (req, res) => {
     }
 
     if (!Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ success: false, message: "Items are required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Items are required" });
     }
 
     let totalAmount = 0;
@@ -241,7 +378,9 @@ export const createRazorpayOrder = async (req, res) => {
       const variant = await Variant.findById(item.variant);
 
       if (!variant) {
-        return res.status(404).json({ success: false, message: "Variant not found" });
+        return res
+          .status(404)
+          .json({ success: false, message: "Variant not found" });
       }
 
       if (variant.stock < quantity) {
@@ -254,7 +393,9 @@ export const createRazorpayOrder = async (req, res) => {
       const product = await Product.findById(variant.product);
 
       if (!product) {
-        return res.status(404).json({ success: false, message: "Product not found" });
+        return res
+          .status(404)
+          .json({ success: false, message: "Product not found" });
       }
 
       totalAmount += variant.price * quantity;
@@ -272,7 +413,7 @@ export const createRazorpayOrder = async (req, res) => {
         quantity,
         attributes,
         status: "pending",
-        paymentStatus: "pending",
+        paymentStatus: "created",
       });
     }
 
@@ -300,7 +441,7 @@ export const createRazorpayOrder = async (req, res) => {
         user: userId,
         items: orderItems,
         totalAmount,
-        payment: { method: "online", status: "pending" },
+        payment: { method: "online", status: "created" },
         shippingAddress: {
           name: String(shippingAddress.name).trim(),
           phone: String(shippingAddress.phone).trim(),
@@ -318,7 +459,7 @@ export const createRazorpayOrder = async (req, res) => {
         amount: totalAmount,
         currency: "INR",
         method: "online",
-        status: "pending",
+        status: "created",
       });
     } catch (err) {
       // Do not leave an Order behind without its Payment
@@ -358,7 +499,9 @@ export const verifyRazorpayPayment = async (req, res) => {
     const userId = req.user._id;
 
     if (!userId) {
-      return res.status(401).json({ success: false, message: "User not found" });
+      return res
+        .status(401)
+        .json({ success: false, message: "User not found" });
     }
 
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
@@ -382,10 +525,14 @@ export const verifyRazorpayPayment = async (req, res) => {
     }
 
     // B. Our pending Payment for this Razorpay order
-    const payment = await Payment.findOne({ razorpayOrderId: razorpay_order_id });
+    const payment = await Payment.findOne({
+      razorpayOrderId: razorpay_order_id,
+    });
 
     if (!payment) {
-      return res.status(404).json({ success: false, message: "Payment not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Payment not found" });
     }
 
     if (String(payment.user) !== String(userId)) {
@@ -402,6 +549,8 @@ export const verifyRazorpayPayment = async (req, res) => {
       });
     }
 
+    await markOnlinePaymentPending(payment);
+
     // With auto-capture, "authorized" turns into "captured" within a second or
     // two. Wait briefly so the customer lands on a finished order.
     for (let i = 0; i < 3 && rzpPayment.status === "authorized"; i++) {
@@ -417,7 +566,11 @@ export const verifyRazorpayPayment = async (req, res) => {
     }
 
     // D. Apply it (safe even if the webhook already did)
-    const result = await settlePayment(payment._id, rzpPayment.status, rzpPayment);
+    const result = await settlePayment(
+      payment._id,
+      rzpPayment.status,
+      rzpPayment,
+    );
 
     if (!result.settled) {
       return res.status(400).json({
@@ -431,10 +584,7 @@ export const verifyRazorpayPayment = async (req, res) => {
 
     // E. Clear cart (not for Buy Now)
     if (!isBuyNow) {
-      await Cart.findOneAndUpdate(
-        { user: userId },
-        { $set: { items: [] } }
-      );
+      await Cart.findOneAndUpdate({ user: userId }, { $set: { items: [] } });
     }
 
     const [order, latest] = await Promise.all([
@@ -464,7 +614,6 @@ export const verifyRazorpayPayment = async (req, res) => {
 const EVENT_TARGET = {
   "payment.authorized": "authorized",
   "payment.captured": "captured",
-  "payment.failed": "failed",
 };
 
 export const razorpayWebhook = async (req, res) => {
@@ -495,12 +644,47 @@ export const razorpayWebhook = async (req, res) => {
     }
 
     const payload = JSON.parse(req.body.toString());
-      
+
     console.log(
       "RAZORPAY WEBHOOK EVENT:",
       payload.event,
-      req.headers["x-razorpay-event-id"]
+      req.headers["x-razorpay-event-id"],
     );
+
+    if (payload.event === "payment.failed") {
+      const failedAttempt = payload.payload?.payment?.entity;
+
+      if (!failedAttempt?.order_id || !failedAttempt?.id) {
+        return res.status(200).json({
+          success: true,
+          message: "Failed payment event ignored: missing payment identifiers",
+        });
+      }
+
+      const payment = await Payment.findOne({
+        razorpayOrderId: failedAttempt.order_id,
+      });
+
+      if (!payment) {
+        console.warn(
+          "Failed payment webhook: no Payment found for",
+          failedAttempt.order_id,
+        );
+      } else {
+        await markOnlinePaymentPending(payment);
+      }
+
+      console.info("Razorpay payment attempt failed", {
+        orderId: failedAttempt?.order_id,
+        paymentId: failedAttempt?.id,
+        errorCode: failedAttempt?.error_code,
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: "Failed attempt received; checkout may still be retried",
+      });
+    }
 
     const target = EVENT_TARGET[payload.event];
     const rzpPayment = payload.payload?.payment?.entity;
@@ -516,7 +700,9 @@ export const razorpayWebhook = async (req, res) => {
 
     if (!payment) {
       console.warn("Webhook: no Payment found for", rzpPayment.order_id);
-      return res.status(200).json({ success: true, message: "No matching payment" });
+      return res
+        .status(200)
+        .json({ success: true, message: "No matching payment" });
     }
 
     // A different successful attempt than the one we already recorded
@@ -525,8 +711,12 @@ export const razorpayWebhook = async (req, res) => {
       payment.razorpayPaymentId &&
       payment.razorpayPaymentId !== rzpPayment.id
     ) {
-      return res.status(200).json({ success: true, message: "Different attempt ignored" });
+      return res
+        .status(200)
+        .json({ success: true, message: "Different attempt ignored" });
     }
+
+    await markOnlinePaymentPending(payment);
 
     const result = await settlePayment(payment._id, target, rzpPayment);
 
@@ -537,5 +727,108 @@ export const razorpayWebhook = async (req, res) => {
   } catch (err) {
     console.error("Webhook error:", err);
     return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+export const dismissRazorpayCheckout = async (req, res) => {
+  try {
+    const { razorpay_order_id: razorpayOrderId } = req.body;
+
+    // Scope the lookup to the authenticated user. Do not trust a user ID
+    // supplied by the browser.
+    const payment = await Payment.findOne({
+      razorpayOrderId,
+      user: req.user._id,
+    });
+
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: "Payment not found",
+      });
+    }
+
+    if (
+      !["created", "pending", "authorized"].includes(payment.status) ||
+      payment.method !== "online"
+    ) {
+      return res.status(200).json({
+        success: true,
+        data: { status: payment.status },
+      });
+    }
+
+    const result = await reconcilePendingRazorpayPayment(payment._id);
+
+    if (result.reconciled) {
+      return res.status(200).json({
+        success: true,
+        data: { status: result.status },
+      });
+    }
+
+    const finalStatusByReason = {
+      no_attempts: "cancelled",
+      all_attempts_failed: "failed",
+    };
+
+    const finalStatus = finalStatusByReason[result.reason];
+
+    if (finalStatus) {
+      const updatedPayment = await Payment.findOneAndUpdate(
+        {
+          _id: payment._id,
+          status: { $in: ["created", "pending"] },
+          method: "online",
+        },
+        { $set: { status: finalStatus } },
+        { new: true },
+      );
+
+      if (updatedPayment) {
+        await Order.updateOne(
+          {
+            _id: updatedPayment.order,
+            "payment.status": { $in: ["created", "pending"] },
+          },
+          {
+            $set: {
+              "payment.status": finalStatus,
+              "items.$[].paymentStatus": finalStatus,
+            },
+          },
+        );
+
+        return res.status(200).json({
+          success: true,
+          data: { status: finalStatus },
+        });
+      }
+
+      // A webhook or verification may have updated it concurrently.
+      const latestPayment = await Payment.findById(payment._id);
+
+      return res.status(200).json({
+        success: true,
+        data: { status: latestPayment?.status || "unknown" },
+      });
+    }
+
+    // Razorpay reports an attempt that is not yet conclusively successful
+    // or failed. Leave the order pending for a later reconciliation.
+    return res.status(200).json({
+      success: true,
+      data: {
+        status: payment.status === "authorized" ? "authorized" : "pending",
+      },
+      message: "Payment is still being checked",
+    });
+  } catch (error) {
+    console.error("Razorpay dismissal reconciliation error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to check payment status",
+    });
   }
 };

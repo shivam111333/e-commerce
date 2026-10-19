@@ -73,3 +73,10 @@ export const verifyRazorpayPaymentSchema = yup.object({
     .required("Razorpay signature is required"),
   isBuyNow: yup.boolean().default(false),
 });
+export const dismissRazorpayCheckoutSchema = yup.object({
+  razorpay_order_id: yup
+    .string()
+    .trim()
+    .max(100, "Razorpay order ID is too long")
+    .required("Razorpay order ID is required"),
+});

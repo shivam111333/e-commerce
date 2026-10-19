@@ -5,9 +5,10 @@ import authorization from "../middlewares/authorizationMiddleware.js"
 import {
   createRazorpayOrderSchema,
   verifyRazorpayPaymentSchema,
+  dismissRazorpayCheckoutSchema
 } from "../validators/paymentValidator.js";
 import {
-  createRazorpayOrder,verifyRazorpayPayment,razorpayWebhook,
+  createRazorpayOrder,verifyRazorpayPayment,razorpayWebhook, dismissRazorpayCheckout
 } from "../controllers/paymentController.js";
 
 const router = express.Router();
@@ -30,6 +31,14 @@ router.post(
 router.post(
   "/razorpay/webhook",
   razorpayWebhook
+);
+
+router.post(
+  "/razorpay/dismiss",
+  authentication,
+  authorization(["user"]),
+  validate(dismissRazorpayCheckoutSchema),
+  dismissRazorpayCheckout
 );
 
 

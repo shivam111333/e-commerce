@@ -46,15 +46,21 @@ const paymentSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: [
+        "created",
         "pending",
         "authorized",
         "captured",
-       
+        "cancelled",
         "failed",
         "refunded",
         "partially_refunded",
       ],
-      default: "pending",
+      default: "created",
+    },
+
+    pendingAt: {
+      type: Date,
+      default: null,
     },
 
     // "online" until payment succeeds, then Razorpay's real method
