@@ -20,6 +20,8 @@ import VerifyEmail from "../pages/auth/VerifyEmail.jsx";
 
 // Admin
 import AdminDashboard from "../pages/admin/AdminDashboard.jsx";
+import AdminOrderHistory from "../pages/admin/AdminOrderHistory.jsx";
+
 
 // Vendor
 import VendorDashboard from "../pages/vendor/VendorDashboard.jsx";
@@ -107,6 +109,8 @@ function AppRoutes() {
             path="/admin/dashboard"
             element={<AdminDashboard />}
           />
+          <Route path="/admin/orders/customer/:id" element={<AdminOrderHistory type="customer" />} />
+           <Route path="/admin/orders/vendor/:id" element={<AdminOrderHistory type="vendor" />} /> 
 
         </Route>
 

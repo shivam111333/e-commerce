@@ -1,4 +1,6 @@
+import Order from '../models/orderSchema.js'
 import User from '../models/userSchema.js'
+import mongoose from 'mongoose'
 
 
 export const getAllUser=async(req,res)=>{
@@ -103,3 +105,54 @@ export const updateUserStatus=async(req,res)=>{
         })
     }
 }
+
+
+
+// GET /order/admin/customer/:id
+export const getOrdersByCustomer = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ message: "Valid customer id is required" });
+    }
+
+    const orders = await Order.find({ user: id })
+      // add your COD / paid filter here to match the admin all-orders endpoint
+      .sort({ createdAt: -1 })
+      .populate("user", "name email")
+      .lean();
+
+    return res.status(200).json({ data: orders });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+};
+
+// GET /order/admin/vendor/:id
+export const getOrdersByVendor = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ message: "Valid vendor id is required" });
+    }
+
+    const orders = await Order.find({ "items.vendor": id })
+      // same COD / paid filter here
+      .sort({ createdAt: -1 })
+      .populate("user", "name email")
+      .lean();
+
+    // keep only this vendor's items in each order
+    const data = orders.map((order) => ({
+      ...order,
+      items: order.items.filter((item) => String(item.vendor) === id),
+    }));
+
+    return res.status(200).json({ data });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+};
+

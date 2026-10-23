@@ -1,437 +1,580 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { toast } from "react-toastify";
+import api from "../../../api/axios.jsx";
+import { FaBox, FaMapMarkerAlt } from "react-icons/fa";
 
-import { toast } from 'react-toastify';
-import api from '../../../api/axios.jsx'
-import { FaBox, FaMapMarkerAlt } from 'react-icons/fa'
+// Statuses the admin can set manually
+const PAYMENT_OPTIONS = ["pending", "paid"];
 
+const optionsFor = (current) =>
+  !current || PAYMENT_OPTIONS.includes(current)
+    ? PAYMENT_OPTIONS
+    : [...PAYMENT_OPTIONS, current];
+
+const formatLabel = (value) =>
+  String(value || "")
+    .replace(/_/g, " ")
+    .replace(/^\w/, (c) => c.toUpperCase());
+
+const formatDate = (isoString) => {
+  if (!isoString) return "N/A";
+  return new Date(isoString).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+};
+
+const formatMoney = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
+
+const getStatusClass = (status) => {
+  switch (status) {
+    case "pending":
+      return "bg-yellow-100 text-yellow-700";
+    case "confirmed":
+      return "bg-blue-100 text-blue-700";
+    case "shipped":
+      return "bg-purple-100 text-purple-700";
+    case "delivered":
+      return "bg-green-100 text-green-700";
+    case "cancelled":
+      return "bg-red-100 text-red-700";
+    default:
+      return "bg-gray-100 text-gray-700";
+  }
+};
+
+/* ---------- order logic helpers ---------- */
+
+const isCancelledItem = (item) => item.status === "cancelled";
+
+const getActiveItems = (order) =>
+  (order.items || []).filter((item) => !isCancelledItem(item));
+
+// "none" | "partial" | "cancelled"
+const getCancelState = (order) => {
+  const items = order.items || [];
+  const cancelled = items.filter(isCancelledItem).length;
+  if (items.length > 0 && cancelled === items.length) return "cancelled";
+  if (cancelled > 0) return "partial";
+  return "none";
+};
+
+// For COD orders the order-level status follows the active (non-cancelled)
+// items: all paid -> paid, otherwise pending. Other methods use the stored value.
+const getDerivedPaymentStatus = (order) => {
+  const stored = order.payment?.status || "pending";
+
+  if (order.payment?.method !== "cod") return stored;
+  if (!PAYMENT_OPTIONS.includes(stored)) return stored;
+
+  const active = getActiveItems(order);
+  if (active.length === 0) return stored;
+
+  return active.every((item) => (item.paymentStatus || "pending") === "paid")
+    ? "paid"
+    : "pending";
+};
+
+const sumItems = (items) =>
+  items.reduce(
+    (sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0),
+    0
+  );
 
 function OrderSection() {
-  const [orders, setOrder] = useState("");
-  const [loading, setLoading] = useState(true)
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [search, setSearch] = useState("");
+  const [cancelFilter, setCancelFilter] = useState("all");
+  const [methodFilter, setMethodFilter] = useState("all");
+  const [busy, setBusy] = useState({});
 
+  // showLoader = false refreshes quietly (used after updates)
+  const loadOrders = useCallback(async (showLoader = true) => {
+    try {
+      if (showLoader) setLoading(true);
+      setError(false);
+
+      const response = await api.get("/order/all");
+      setOrders(response.data.data || []);
+    } catch (err) {
+      console.error(err);
+      if (showLoader) {
+        setError(true);
+        toast.error("Failed to load Orders");
+      }
+    } finally {
+      if (showLoader) setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const fetchOrders = async () => {
-      try {
-        const response = await api.get('/order/all');
-        console.log(response.data);
-        setOrder(response.data.data);
+    loadOrders();
+  }, [loadOrders]);
 
-      } catch (err) {
-        console.log(err);
-        toast.error("Failed to load Orders")
-      }
-      finally {
-        setLoading(false)
-      }
+  const query = search.trim().toLowerCase();
+
+  const filteredOrders = useMemo(() => {
+    return orders.filter((order) => {
+      const matchesSearch =
+        !query ||
+        (order.orderNumber || "").toLowerCase().includes(query) ||
+        String(order._id).toLowerCase().includes(query);
+
+      const cancelState = getCancelState(order);
+      const matchesCancel =
+        cancelFilter === "all" ||
+        (cancelFilter === "active" && cancelState === "none") ||
+        (cancelFilter === "partial" && cancelState === "partial") ||
+        (cancelFilter === "cancelled" && cancelState === "cancelled");
+
+      const matchesMethod =
+        methodFilter === "all" || order.payment?.method === methodFilter;
+
+      return matchesSearch && matchesCancel && matchesMethod;
+    });
+  }, [orders, query, cancelFilter, methodFilter]);
+
+  const withBusy = async (key, fn) => {
+    if (busy[key]) return;
+    setBusy((prev) => ({ ...prev, [key]: true }));
+    try {
+      await fn();
+    } finally {
+      setBusy((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
     }
-    fetchOrders();
+  };
 
-  }, [])
+  const updateGlobalPaymentStatus = (orderId, paymentStatus) =>
+    withBusy(orderId, async () => {
+      try {
+        const response = await api.patch(`/order/${orderId}/payment-status`, {
+          paymentStatus,
+        });
+
+        toast.success(response.data.message);
+
+        // Order status applies to every active (non-cancelled) item
+        setOrders((prevOrders) =>
+          prevOrders.map((order) =>
+            order._id === orderId
+              ? {
+                  ...order,
+                  payment: { ...order.payment, status: paymentStatus },
+                  items: order.items.map((item) =>
+                    isCancelledItem(item) ? item : { ...item, paymentStatus }
+                  ),
+                }
+              : order
+          )
+        );
+
+        loadOrders(false);
+      } catch (err) {
+        console.error(err);
+        toast.error(
+          err.response?.data?.message || "Failed to update payment status"
+        );
+      }
+    });
+
+  const updateItemPaymentStatus = (orderId, itemId, paymentStatus) =>
+    withBusy(`${orderId}:${itemId}`, async () => {
+      try {
+        const response = await api.patch(
+          `/order/${orderId}/item/${itemId}/payment-status`,
+          { paymentStatus }
+        );
+
+        toast.success(response.data.message);
+
+        // The order-level status is derived from items, so it updates itself
+        setOrders((prevOrders) =>
+          prevOrders.map((order) =>
+            order._id === orderId
+              ? {
+                  ...order,
+                  items: order.items.map((item) =>
+                    item._id === itemId ? { ...item, paymentStatus } : item
+                  ),
+                }
+              : order
+          )
+        );
+
+        loadOrders(false);
+      } catch (err) {
+        console.error(err);
+        toast.error(
+          err.response?.data?.message || "Failed to update item payment status"
+        );
+      }
+    });
 
   if (loading) {
     return <p>Loading Orders...</p>;
   }
 
-  const formatDate = (isoString) => {
-    if (!isoString) return "N/A";
+  const hasFilters = search || cancelFilter !== "all" || methodFilter !== "all";
 
-    return new Date(isoString).toLocaleDateString('en-IN', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
-    });
-  };
-
-  // UPDATED: Add new statuses
-  const getStatusClass = (status) => {
-    switch (status) {
-      case "pending":
-        return "bg-yellow-100 text-yellow-700";
-
-      case "confirmed":
-        return "bg-blue-100 text-blue-700";
-
-     
-
-      case "shipped":
-        return "bg-purple-100 text-purple-700";
-
-
-
-      case "delivered":
-        return "bg-green-100 text-green-700";
-
-      case "cancelled":
-        return "bg-red-100 text-red-700";
-
-      default:
-        return "bg-gray-100 text-gray-700";
-    }
-  };
-
-  // NEW: Payment status styling
-
-
-  const updateGlobalPaymentStatus = async (
-    orderId,
-    paymentStatus
-  ) => {
-    try {
-      const response = await api.patch(
-        `/order/${orderId}/payment-status`,
-        {
-          paymentStatus,
-        }
-      );
-
-      toast.success(response.data.message);
-
-      setOrder((prevOrders) =>
-        prevOrders.map((order) =>
-          order._id === orderId
-            ? {
-              ...order,
-              payment: {
-                ...order.payment,
-                status: paymentStatus,
-              },
-            }
-            : order
-        )
-      );
-    } catch (err) {
-      console.error(err);
-
-      toast.error(
-        err.response?.data?.message ||
-        "Failed to update payment status"
-      );
-    }
-  };
-
-  const updateItemPaymentStatus = async (
-    orderId,
-    itemId,
-    paymentStatus
-  ) => {
-    try {
-      const response = await api.patch(
-        `/order/${orderId}/item/${itemId}/payment-status`,
-        {
-          paymentStatus,
-        }
-      );
-
-      toast.success(response.data.message);
-
-      setOrder((prevOrders) =>
-        prevOrders.map((order) =>
-          order._id === orderId
-            ? {
-              ...order,
-              items: order.items.map((item) =>
-                item._id === itemId
-                  ? {
-                    ...item,
-                    paymentStatus,
-                  }
-                  : item
-              ),
-            }
-            : order
-        )
-      );
-    } catch (err) {
-      console.error(err);
-
-      toast.error(
-        err.response?.data?.message ||
-        "Failed to update item payment status"
-      );
-    }
+  const clearFilters = () => {
+    setSearch("");
+    setCancelFilter("all");
+    setMethodFilter("all");
   };
 
   return (
     <div className="min-h-screen bg-gray-50 py-4 sm:py-8">
       <div className="mx-auto w-full max-w-6xl px-0 sm:px-1">
-
         {/* Header */}
-        <div className="mb-6 flex items-center gap-4 sm:mb-8">
-
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800 sm:text-3xl">
-              All Orders
-            </h1>
-
-            <p className="text-gray-500 mt-1">
-              Track and manage all orders
-            </p>
-          </div>
+        <div className="mb-6 sm:mb-8">
+          <h1 className="text-2xl font-bold text-gray-800 sm:text-3xl">
+            All Orders
+          </h1>
+          <p className="mt-1 text-gray-500">Track and manage all orders</p>
         </div>
 
-        {/* No orders */}
-        {orders.length === 0 ? (
-          <div className="rounded-xl bg-white p-6 text-center shadow-sm sm:p-10">
-            <FaBox className="text-5xl text-gray-300 mx-auto mb-4" />
+        {/* Search + filters */}
+        <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by order number or ID..."
+            className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-600 sm:max-w-md"
+          />
 
+          <select
+            value={cancelFilter}
+            onChange={(e) => setCancelFilter(e.target.value)}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm"
+          >
+            <option value="all">All orders</option>
+            <option value="active">No cancellations</option>
+            <option value="partial">Partially cancelled</option>
+            <option value="cancelled">Fully cancelled</option>
+          </select>
+
+          <select
+            value={methodFilter}
+            onChange={(e) => setMethodFilter(e.target.value)}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm"
+          >
+            <option value="all">All payment methods</option>
+            <option value="cod">COD</option>
+            <option value="online">ONLINE</option>
+          </select>
+
+          {hasFilters && (
+            <button
+              onClick={clearFilters}
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
+        {error ? (
+          <div className="rounded-xl bg-white p-6 text-center shadow-sm sm:p-10">
+            <FaBox className="mx-auto mb-4 text-5xl text-gray-300" />
+            <h2 className="text-xl font-semibold text-gray-700">
+              Couldn't load orders
+            </h2>
+            <p className="mt-2 text-gray-500">
+              Something went wrong while fetching the orders.
+            </p>
+            <button
+              onClick={() => loadOrders()}
+              className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+            >
+              Retry
+            </button>
+          </div>
+        ) : orders.length === 0 ? (
+          <div className="rounded-xl bg-white p-6 text-center shadow-sm sm:p-10">
+            <FaBox className="mx-auto mb-4 text-5xl text-gray-300" />
             <h2 className="text-xl font-semibold text-gray-700">
               No orders yet
             </h2>
-
-            <p className="text-gray-500 mt-2">
+            <p className="mt-2 text-gray-500">
               No orders have been placed yet.
             </p>
-
-
+          </div>
+        ) : filteredOrders.length === 0 ? (
+          <div className="rounded-xl bg-white p-6 text-center shadow-sm sm:p-10">
+            <FaBox className="mx-auto mb-4 text-5xl text-gray-300" />
+            <h2 className="text-xl font-semibold text-gray-700">
+              No matching orders
+            </h2>
+            <p className="mt-2 text-gray-500">
+              No orders match your search or filters.
+            </p>
           </div>
         ) : (
           <div className="space-y-6">
+            {filteredOrders.map((order) => {
+              const isCod = order.payment?.method === "cod";
+              const cancelState = getCancelState(order);
+              const allCancelled = cancelState === "cancelled";
+              const orderStatus = getDerivedPaymentStatus(order);
 
-            {orders.map((order) => (
-              <div
-                key={order._id}
-                className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm"
-              >
+              const activeItems = getActiveItems(order);
+              const activeTotal = sumItems(activeItems);
+              const cancelledTotal = sumItems(
+                (order.items || []).filter(isCancelledItem)
+              );
 
-                {/* Order Header */}
-                <div className="border-b border-gray-200 bg-gray-50 px-4 py-4 sm:px-6">
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              const orderBusy = !!busy[order._id];
 
-                    <div>
-                      <p className="text-sm text-gray-500">
-                        Order Number
-                      </p>
+              return (
+                <div
+                  key={order._id}
+                  className={`overflow-hidden rounded-xl border bg-white shadow-sm ${
+                    allCancelled ? "border-red-200" : "border-gray-200"
+                  }`}
+                >
+                  {/* Order Header */}
+                  <div className="border-b border-gray-200 bg-gray-50 px-4 py-4 sm:px-6">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="text-sm text-gray-500">Order Number</p>
+                        <p className="font-semibold text-gray-800">
+                          {order.orderNumber || order._id}
+                        </p>
+                        {cancelState !== "none" && (
+                          <span className="mt-1 inline-block rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-700">
+                            {allCancelled ? "Cancelled" : "Partially cancelled"}
+                          </span>
+                        )}
+                      </div>
 
-                      {/* UPDATED: Show orderNumber */}
-                      <p className="font-semibold text-gray-800">
-                        {order.orderNumber}
-                      </p>
+                      {order.user?.name && (
+                        <div>
+                          <p className="text-sm text-gray-500">Customer</p>
+                          <p className="font-medium text-gray-800">
+                            {order.user.name}
+                          </p>
+                        </div>
+                      )}
+
+                      <div>
+                        <p className="text-sm text-gray-500">Ordered on</p>
+                        <p className="font-medium text-gray-800">
+                          {formatDate(order.createdAt)}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-sm text-gray-500">Payment Method</p>
+                        <p className="font-medium text-gray-800">
+                          {order.payment?.method?.toUpperCase() || "N/A"}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-sm text-gray-500">Payment Status</p>
+                        <select
+                          value={orderStatus}
+                          onChange={(e) =>
+                            updateGlobalPaymentStatus(order._id, e.target.value)
+                          }
+                          disabled={!isCod || allCancelled || orderBusy}
+                          className="w-full max-w-full rounded-lg border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-gray-100 sm:w-auto"
+                        >
+                          {optionsFor(orderStatus).map((s) => (
+                            <option key={s} value={s}>
+                              {formatLabel(s)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <p className="text-sm text-gray-500">Total</p>
+                        <p
+                          className={`text-lg font-bold ${
+                            allCancelled
+                              ? "text-gray-400 line-through"
+                              : "text-gray-800"
+                          }`}
+                        >
+                          {formatMoney(order.totalAmount)}
+                        </p>
+                        {cancelState === "partial" && (
+                          <p className="text-xs text-gray-500">
+                            {formatMoney(activeTotal)} active items
+                            <br />
+                            {formatMoney(cancelledTotal)} cancelled
+                          </p>
+                        )}
+                      </div>
                     </div>
-
-                    <div>
-                      <p className="text-sm text-gray-500">
-                        Ordered on
-                      </p>
-
-                      <p className="font-medium text-gray-800">
-                        {formatDate(order.createdAt)}
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="text-sm text-gray-500">
-                        Payment Method
-                      </p>
-
-                      {/* NEW: Show payment method */}
-                      <p className="font-medium text-gray-800">
-                        {order.payment?.method?.toUpperCase() || "N/A"}
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="text-sm text-gray-500">
-                        Payment Status
-                      </p>
-
-                      {/* UPDATED: Access nested payment.status */}
-                      <select
-                        value={order.payment?.status || "pending"}
-                        onChange={(e) =>
-                          updateGlobalPaymentStatus(
-                            order._id,
-                            e.target.value
-                          )
-                        }
-                        disabled={order.payment?.method !== "cod"}
-                        className="w-full max-w-full rounded-lg border px-3 py-2 text-sm sm:w-auto"
-                      >
-                        <option value="pending">Pending</option>
-                      
-                        <option value="paid">Paid</option>
-                        <option value="failed">Failed</option>
-                        <option value="partially_refunded">
-                          Partially Refunded
-                        </option>
-                        <option value="refunded">Refunded</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <p className="text-sm text-gray-500">
-                        Total
-                      </p>
-
-                      <p className="text-lg font-bold text-gray-800">
-                        ₹{Number(order.totalAmount).toLocaleString("en-IN")}
-                      </p>
-                    </div>
-
                   </div>
-                </div>
 
-                {/* Order Items */}
-                <div className="p-4 sm:p-6">
+                  {/* Order Items */}
+                  <div className="p-4 sm:p-6">
+                    <h2 className="mb-4 text-lg font-semibold text-gray-800">
+                      Items
+                    </h2>
 
-                  <h2 className="text-lg font-semibold text-gray-800 mb-4">
-                    Items
-                  </h2>
+                    <div className="space-y-4">
+                      {order.items?.map((item) => {
+                        const itemStatus = item.paymentStatus || "pending";
+                        const isCancelled = isCancelledItem(item);
+                        const itemBusy = !!busy[`${order._id}:${item._id}`];
+                        const itemTotal =
+                          Number(item.price) * Number(item.quantity);
 
-                  <div className="space-y-4">
+                        // paid online, then cancelled -> money must go back
+                        const needsRefund =
+                          isCancelled &&
+                          !isCod &&
+                          order.payment?.status === "paid";
 
-                    {order.items?.map((item) => (
-                      <div
-                        key={item._id}
-                        className="rounded-lg border border-gray-200 p-3 sm:p-4"
-                      >
+                        return (
+                          <div
+                            key={item._id}
+                            className={`rounded-lg border p-3 sm:p-4 ${
+                              isCancelled
+                                ? "border-red-200 bg-red-50/40"
+                                : "border-gray-200"
+                            }`}
+                          >
+                            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                              {/* Product Info */}
+                              <div className={`flex-1 ${isCancelled ? "opacity-60" : ""}`}>
+                                <h3 className="text-lg font-semibold text-gray-800">
+                                  {item.name}
+                                </h3>
 
-                        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-
-                          {/* Product Info */}
-                          <div className="flex-1">
-
-                            <h3 className="font-semibold text-gray-800 text-lg">
-                              {item._id}
-                            </h3>
-                            <h3 className="font-semibold text-gray-800 text-lg">
-                              {item.name}
-                            </h3>
-
-                            {/* Attributes */}
-                            {item.attributes &&
-                              Object.keys(item.attributes).length > 0 && (
-                                <div className="mt-2 flex flex-wrap gap-2">
-                                  {Object.entries(item.attributes).map(
-                                    ([key, value]) => (
-                                      <span
-                                        key={key}
-                                        className="text-sm bg-gray-100 px-3 py-1 rounded"
-                                      >
-                                        <span className="font-medium">
-                                          {key}:
-                                        </span>{" "}
-                                        {value}
-                                      </span>
-                                    )
+                                {item.attributes &&
+                                  Object.keys(item.attributes).length > 0 && (
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                      {Object.entries(item.attributes).map(
+                                        ([key, value]) => (
+                                          <span
+                                            key={key}
+                                            className="rounded bg-gray-100 px-3 py-1 text-sm"
+                                          >
+                                            <span className="font-medium">
+                                              {key}:
+                                            </span>{" "}
+                                            {value}
+                                          </span>
+                                        )
+                                      )}
+                                    </div>
                                   )}
+
+                                <div className="mt-3 text-sm text-gray-500">
+                                  Quantity: {item.quantity}
                                 </div>
-                              )}
+                              </div>
 
-                            <div className="mt-3 text-sm text-gray-500">
-                              Quantity: {item.quantity}
-                            </div>
+                              {/* Price + Status */}
+                              <div className="md:text-right">
+                                <p className="text-lg font-bold text-gray-800">
+                                  {formatMoney(item.price)}
+                                </p>
 
-                          </div>
+                                <p className="text-sm text-gray-500">
+                                  {formatMoney(itemTotal)} total
+                                </p>
 
-                          {/* Price + Status */}
-                          <div className="md:text-right">
+                                <span
+                                  className={`mt-3 inline-block rounded-full px-3 py-1 text-sm font-medium capitalize ${getStatusClass(
+                                    item.status
+                                  )}`}
+                                >
+                                  {item.status}
+                                </span>
 
-                            <p className="text-lg font-bold text-gray-800">
-                              ₹
-                              {Number(item.price).toLocaleString("en-IN")}
-                            </p>
-
-                            <p className="text-sm text-gray-500">
-                              ₹
-                              {(
-                                Number(item.price) *
-                                Number(item.quantity)
-                              ).toLocaleString("en-IN")}{" "}
-                              total
-                            </p>
-
-                            {/* Order Status */}
-                            <span
-                              className={`inline-block mt-3 px-3 py-1 rounded-full text-sm font-medium capitalize ${getStatusClass(item.status)
-                                }`}
-                            >
-                              {item.status}
-                            </span>
-
-                            {/* NEW: Item Payment Status */}
-                            <div className="mt-2">
-                              <p className="text-xs text-gray-500 mb-1">Item Payment:</p>
-                              <select
-                                value={item.paymentStatus || "pending"}
-                                onChange={(e) =>
-                                  updateItemPaymentStatus(
-                                    order._id,
-                                    item._id,
-                                    e.target.value
-                                  )
-                                }
-                                disabled={order.payment?.method !== "cod"}
-                                className="w-full max-w-full rounded-lg border px-3 py-2 text-sm sm:w-auto"
-                              >
-                                <option value="pending">Pending</option>
-                                <option value="paid">Paid</option>
-                                <option value="failed">Failed</option>
-                                <option value="partially_refunded">
-                                  Partially Refunded
-                                </option>
-                                <option value="refunded">Refunded</option>
-                              </select>
-                            </div>
-
-                            {item.status === "cancelled" && (
-                              <div className="mt-3 text-sm text-red-600 border-t pt-2">
-                                <p className="font-medium">Cancelled</p>
-
-                                {item.cancellationReason && (
-                                  <p>
-                                    Reason:{" "}
-                                    {item.cancellationReason}
+                                <div className="mt-2">
+                                  <p className="mb-1 text-xs text-gray-500">
+                                    Item Payment:
                                   </p>
+                                  <select
+                                    value={itemStatus}
+                                    onChange={(e) =>
+                                      updateItemPaymentStatus(
+                                        order._id,
+                                        item._id,
+                                        e.target.value
+                                      )
+                                    }
+                                    disabled={!isCod || isCancelled || itemBusy}
+                                    className="w-full max-w-full rounded-lg border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-gray-100 sm:w-auto"
+                                  >
+                                    {optionsFor(itemStatus).map((s) => (
+                                      <option key={s} value={s}>
+                                        {formatLabel(s)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+
+                                {isCancelled && (
+                                  <div className="mt-3 border-t border-red-200 pt-2 text-sm text-red-600">
+                                    <p className="font-medium">
+                                      Cancelled
+                                      {item.cancelledBy
+                                        ? ` by ${item.cancelledBy}`
+                                        : ""}
+                                    </p>
+
+                                    {item.cancellationReason && (
+                                      <p>Reason: {item.cancellationReason}</p>
+                                    )}
+
+                                    {needsRefund && (
+                                      <p className="mt-1 font-medium text-orange-700">
+                                        Paid online: refund of{" "}
+                                        {formatMoney(itemTotal)} needs to be
+                                        processed.
+                                      </p>
+                                    )}
+                                  </div>
                                 )}
                               </div>
-                            )}
-
+                            </div>
                           </div>
+                        );
+                      })}
+                    </div>
 
-                        </div>
+                    {/* Shipping Address */}
+                    <div className="mt-6 border-t pt-6">
+                      <div className="mb-3 flex items-center gap-2">
+                        <FaMapMarkerAlt className="text-gray-600" />
+                        <h2 className="font-semibold text-gray-800">
+                          Shipping Address
+                        </h2>
                       </div>
-                    ))}
 
-                  </div>
-
-                  {/* Shipping Address */}
-                  <div className="mt-6 border-t pt-6">
-
-                    <div className="flex items-center gap-2 mb-3">
-                      <FaMapMarkerAlt className="text-gray-600" />
-
-                      <h2 className="font-semibold text-gray-800">
-                        Shipping Address
-                      </h2>
+                      <div className="text-sm leading-6 text-gray-600">
+                        <p className="font-medium text-gray-800">
+                          {order.shippingAddress?.name}
+                        </p>
+                        <p>{order.shippingAddress?.address}</p>
+                        <p>
+                          {order.shippingAddress?.city},{" "}
+                          {order.shippingAddress?.state} -{" "}
+                          {order.shippingAddress?.pincode}
+                        </p>
+                        <p>Phone: {order.shippingAddress?.phone}</p>
+                      </div>
                     </div>
-
-                    <div className="text-sm text-gray-600 leading-6">
-                      <p className="font-medium text-gray-800">
-                        {order.shippingAddress?.name}
-                      </p>
-
-                      <p>
-                        {order.shippingAddress?.address}
-                      </p>
-
-                      <p>
-                        {order.shippingAddress?.city},{" "}
-                        {order.shippingAddress?.state} -{" "}
-                        {order.shippingAddress?.pincode}
-                      </p>
-
-                      <p>
-                        Phone: {order.shippingAddress?.phone}
-                      </p>
-                    </div>
-
                   </div>
-
                 </div>
-              </div>
-            ))}
-
+              );
+            })}
           </div>
         )}
       </div>

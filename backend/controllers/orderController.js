@@ -21,7 +21,7 @@ const PLACED_ORDER_FILTER = {
   $or: [{ "payment.method": "cod" }, { "payment.status": "paid" }],
 };
 
-const ADMIN_COD_STATUSES = ["pending", "paid", "failed"];
+const ADMIN_COD_STATUSES = ["pending", "paid"];
 
 /**
  * Recalculates the order-level payment status from its items (COD only)
@@ -91,7 +91,10 @@ export const getOrderByUserId = async (req, res) => {
     // The customer sees ALL their own orders, including online checkouts that
     // are still unpaid or failed (the frontend labels them by payment.status).
     // Vendors and admin still use PLACED_ORDER_FILTER.
-    const orders = await Order.find({ user: userId }).sort({ createdAt: -1 });
+  const orders = await Order.find({
+  user: userId,
+  "payment.status": { $ne: "cancelled" },
+}).sort({ createdAt: -1 });
 
     if (orders.length === 0) {
       return res.status(404).json({
