@@ -11,6 +11,10 @@ import {
   updateOrderPaymentStatus,
   updateOrderItemPaymentStatus,
 } from "../controllers/orderController.js";
+import {
+  createReturnRequest,
+  getMyReturnRequests,
+} from "../controllers/returnRequestController.js";
 
 import authentication from "../middlewares/authMiddleware.js";
 import authorization from "../middlewares/authorizationMiddleware.js";
@@ -24,6 +28,7 @@ import {
   orderParamsSchema,
   orderItemParamsSchema,
 } from "../validators/orderValidator.js";
+import { createReturnRequestSchema } from "../validators/returnRequestValidator.js";
 
 // Admin
 router.get(
@@ -41,6 +46,13 @@ router.get(
   getOrderByUserId
 );
 
+router.get(
+  "/returns/my",
+  authentication,
+  authorization(["user"]),
+  getMyReturnRequests
+);
+
 // Customer creates COD order
 router.post(
   "/",
@@ -48,6 +60,16 @@ router.post(
   authorization(["user"]),
   validate(createOrderSchema),
   createUserOrder
+);
+
+// Customer requests a return for a delivered item
+router.post(
+  "/:orderId/item/:itemId/return",
+  authentication,
+  authorization(["user"]),
+  validate(orderItemParamsSchema, "params"),
+  validate(createReturnRequestSchema),
+  createReturnRequest
 );
 
 // Vendor/Admin orders

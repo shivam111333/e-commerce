@@ -56,6 +56,10 @@ const orderItemSchema = new mongoose.Schema(
       default: "pending",
     },
 
+    deliveredAt: {
+      type: Date,
+    },
+
     // Individual item payment status
     paymentStatus: {
       type: String,

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "react-toastify";
 import api from "../../../api/axios.jsx";
-import { FaBox, FaMapMarkerAlt } from "react-icons/fa";
+import { FaBox, FaMapMarkerAlt, FaUndoAlt } from "react-icons/fa";
 
 // Statuses the admin can set manually
 const PAYMENT_OPTIONS = ["pending", "paid"];
@@ -330,6 +330,42 @@ function OrderSection() {
               const cancelledTotal = sumItems(
                 (order.items || []).filter(isCancelledItem)
               );
+              const returnItems = (order.items || []).filter(
+                (item) => item.returnRequest
+              );
+              const requestedRefundTotal = returnItems
+                .filter((item) => item.returnRequest.status === "requested")
+                .reduce(
+                  (sum, item) =>
+                    sum + Number(item.returnRequest.refundAmount || 0),
+                  0
+                );
+              const pendingRefundTotal = returnItems
+                .filter((item) =>
+                  ["approved", "received", "refund_pending"].includes(
+                    item.returnRequest.status
+                  )
+                )
+                .reduce(
+                  (sum, item) =>
+                    sum + Number(item.returnRequest.refundAmount || 0),
+                  0
+                );
+              const completedRefundTotal = returnItems
+                .filter((item) => item.returnRequest.status === "refunded")
+                .reduce(
+                  (sum, item) =>
+                    sum + Number(item.returnRequest.refundAmount || 0),
+                  0
+                );
+
+              // Used by the summary header and the progress bar
+              const returnTotal =
+                requestedRefundTotal +
+                pendingRefundTotal +
+                completedRefundTotal;
+              const percent = (value) =>
+                returnTotal > 0 ? (value / returnTotal) * 100 : 0;
 
               const orderBusy = !!busy[order._id];
 
@@ -385,7 +421,12 @@ function OrderSection() {
                           onChange={(e) =>
                             updateGlobalPaymentStatus(order._id, e.target.value)
                           }
-                          disabled={!isCod || allCancelled || orderBusy}
+                          disabled={
+                            !isCod ||
+                            allCancelled ||
+                            returnItems.length > 0 ||
+                            orderBusy
+                          }
                           className="w-full max-w-full rounded-lg border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-gray-100 sm:w-auto"
                         >
                           {optionsFor(orderStatus).map((s) => (
@@ -424,6 +465,102 @@ function OrderSection() {
                       Items
                     </h2>
 
+                    {/* Returns & refunds summary for the whole order */}
+                    {returnItems.length > 0 && (
+                      <div className="-mx-4 mb-5 border-y border-orange-200 bg-orange-50 px-4 py-5 sm:-mx-6 sm:px-6">
+                        {/* Header */}
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600">
+                              <FaUndoAlt />
+                            </span>
+                            <div>
+                              <h3 className="font-semibold text-gray-800">
+                                Returns &amp; refunds
+                              </h3>
+                              <p className="text-xs text-gray-500">
+                                {returnItems.length} item
+                                {returnItems.length > 1 ? "s" : ""} with a
+                                return request
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="text-right">
+                            <p className="text-xs text-gray-500">
+                              Total return value
+                            </p>
+                            <p className="text-lg font-bold text-gray-800">
+                              {formatMoney(returnTotal)}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Progress bar: how the money is split */}
+                        {returnTotal > 0 && (
+                          <div
+                            className="mt-4 flex h-2 overflow-hidden rounded-full bg-white ring-1 ring-orange-100"
+                            aria-hidden="true"
+                          >
+                            <div
+                              className="bg-blue-500"
+                              style={{ width: `${percent(requestedRefundTotal)}%` }}
+                            />
+                            <div
+                              className="bg-amber-500"
+                              style={{ width: `${percent(pendingRefundTotal)}%` }}
+                            />
+                            <div
+                              className="bg-green-500"
+                              style={{ width: `${percent(completedRefundTotal)}%` }}
+                            />
+                          </div>
+                        )}
+
+                        {/* Stat tiles */}
+                        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                          <div className="rounded-lg border border-blue-100 bg-white p-3 shadow-sm">
+                            <div className="flex items-center gap-2 text-xs font-medium text-gray-500">
+                              <span className="h-2 w-2 rounded-full bg-blue-500" />
+                              Requested
+                            </div>
+                            <p className="mt-1 text-xl font-bold text-gray-800">
+                              {formatMoney(requestedRefundTotal)}
+                            </p>
+                            <p className="text-xs text-gray-400">
+                              Waiting for review
+                            </p>
+                          </div>
+
+                          <div className="rounded-lg border border-amber-200 bg-white p-3 shadow-sm">
+                            <div className="flex items-center gap-2 text-xs font-medium text-gray-500">
+                              <span className="h-2 w-2 rounded-full bg-amber-500" />
+                              Pending refund
+                            </div>
+                            <p className="mt-1 text-xl font-bold text-amber-700">
+                              {formatMoney(pendingRefundTotal)}
+                            </p>
+                            <p className="text-xs text-gray-400">
+                              Approved, not yet paid back
+                            </p>
+                          </div>
+
+                          <div className="rounded-lg border border-green-200 bg-white p-3 shadow-sm">
+                            <div className="flex items-center gap-2 text-xs font-medium text-gray-500">
+                              <span className="h-2 w-2 rounded-full bg-green-500" />
+                              Refunded
+                            </div>
+                            <p className="mt-1 text-xl font-bold text-green-700">
+                              {formatMoney(completedRefundTotal)}
+                            </p>
+                            <p className="text-xs text-gray-400">
+                              Money returned
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="space-y-4">
                       {order.items?.map((item) => {
                         const itemStatus = item.paymentStatus || "pending";
@@ -449,7 +586,11 @@ function OrderSection() {
                           >
                             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                               {/* Product Info */}
-                              <div className={`flex-1 ${isCancelled ? "opacity-60" : ""}`}>
+                              <div
+                                className={`flex-1 ${
+                                  isCancelled ? "opacity-60" : ""
+                                }`}
+                              >
                                 <h3 className="text-lg font-semibold text-gray-800">
                                   {item.name}
                                 </h3>
@@ -509,7 +650,12 @@ function OrderSection() {
                                         e.target.value
                                       )
                                     }
-                                    disabled={!isCod || isCancelled || itemBusy}
+                                    disabled={
+                                      !isCod ||
+                                      isCancelled ||
+                                      !!item.returnRequest ||
+                                      itemBusy
+                                    }
                                     className="w-full max-w-full rounded-lg border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:bg-gray-100 sm:w-auto"
                                   >
                                     {optionsFor(itemStatus).map((s) => (
@@ -544,6 +690,50 @@ function OrderSection() {
                                 )}
                               </div>
                             </div>
+
+                            {/* Return summary: full width under the item,
+                                outside the narrow right-hand column */}
+                            {item.returnRequest && (
+                              <div className="mt-4 w-full rounded-lg border border-blue-200 bg-blue-50 p-3 text-left text-sm text-blue-900 sm:p-4">
+                                <p className="font-semibold">
+                                  Return:{" "}
+                                  {formatLabel(item.returnRequest.status)}
+                                </p>
+
+                                <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-6">
+                                  <div>
+                                    <p className="text-xs text-blue-800/80">
+                                      Quantity
+                                    </p>
+                                    <p className="font-medium">
+                                      {item.returnRequest.requestedQuantity}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs text-blue-800/80">
+                                      Refund amount
+                                    </p>
+                                    <p className="font-medium">
+                                      {formatMoney(
+                                        item.returnRequest.refundAmount
+                                      )}
+                                    </p>
+                                  </div>
+                                  {item.returnRequest.refundProcessedAt && (
+                                    <div>
+                                      <p className="text-xs text-blue-800/80">
+                                        Refunded on
+                                      </p>
+                                      <p className="font-medium">
+                                        {formatDate(
+                                          item.returnRequest.refundProcessedAt
+                                        )}
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         );
                       })}

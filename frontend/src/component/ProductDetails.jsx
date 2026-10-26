@@ -33,6 +33,10 @@ function ProductDetails() {
 
   const [isExpanded, setIsExpanded] = useState(false)
 
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [id]);
+
   // =========================
   // FETCH PRODUCT
   // =========================

@@ -15,6 +15,7 @@ function Orders() {
   const { isAuthenticated } = useSelector((state) => state.auth);
 
   const [orders, setOrders] = useState([]);
+  const [returnRequests, setReturnRequests] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -27,11 +28,13 @@ function Orders() {
         setLoading(true);
 
         const response = await api.get("/order/my-orders");
-        console.log(response.data.data)
 
         if (response.data.success) {
           setOrders(response.data.data || []);
         }
+
+        const returnsResponse = await api.get("/order/returns/my");
+        setReturnRequests(returnsResponse.data.data || []);
       } catch (error) {
         if (error.response?.status === 404) {
           setOrders([]);
@@ -237,7 +240,27 @@ function Orders() {
 
                   <div className="space-y-4">
 
-                    {order.items?.map((item) => (
+                    {order.items?.map((item) => {
+                      const existingReturn = returnRequests.find(
+                        (request) =>
+                          String(request.order) === String(order._id) &&
+                          String(request.item) === String(item._id)
+                      );
+                      const deliveredAt = item.deliveredAt
+                        ? new Date(item.deliveredAt).getTime()
+                        : NaN;
+                      const withinReturnWindow =
+                        Number.isFinite(deliveredAt) &&
+                        deliveredAt <= Date.now() &&
+                        Date.now() - deliveredAt <= 7 * 24 * 60 * 60 * 1000;
+                      const canRequestReturn =
+                        ["online", "cod"].includes(order.payment?.method) &&
+                        item.status === "delivered" &&
+                        item.paymentStatus === "paid" &&
+                        withinReturnWindow &&
+                        !existingReturn;
+
+                      return (
                       <div
                         key={item._id}
                         className="border border-gray-200 rounded-lg p-4"
@@ -319,6 +342,20 @@ function Orders() {
                               </span>
                             </div>
 
+                            {canRequestReturn && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  navigate(
+                                    `/orders/${order._id}/items/${item._id}/return`
+                                  )
+                                }
+                                className="mt-3 rounded-lg border border-blue-600 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50"
+                              >
+                                Request return
+                              </button>
+                            )}
+
                             {item.status === "cancelled" && (
                               <div className="mt-3 text-sm text-red-600 border-t pt-2">
                                 <p className="font-medium">Cancelled</p>
@@ -331,12 +368,66 @@ function Orders() {
                                 )}
                               </div>
                             )}
-
                           </div>
-
                         </div>
+                     
+{existingReturn && (
+  <div className="mt-4 w-full max-w-[650px] rounded-xl border border-blue-200 bg-blue-50/60 p-4 text-left text-sm text-slate-700">
+    <p className="mb-3 flex items-center gap-2 font-semibold text-slate-900">
+      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-100 text-blue-700">
+        ↩
+      </span>
+      Return & refund summary
+    </p>
+
+    <dl className="grid grid-cols-1 gap-x-8 gap-y-3 sm:grid-cols-2">
+      <div className="grid grid-cols-[125px_minmax(0,1fr)] items-start gap-2">
+        <dt className="text-slate-500">Status</dt>
+        <dd className="break-words font-semibold capitalize text-slate-800">
+          {existingReturn.status.replace(/_/g, " ")}
+        </dd>
+      </div>
+
+      <div className="grid grid-cols-[125px_minmax(0,1fr)] items-start gap-2">
+        <dt className="text-slate-500">Return quantity</dt>
+        <dd className="font-medium text-slate-800">
+          {existingReturn.requestedQuantity}
+        </dd>
+      </div>
+
+      <div className="grid grid-cols-[125px_minmax(0,1fr)] items-start gap-2">
+        <dt className="text-slate-500">Refund amount</dt>
+        <dd className="font-semibold text-slate-900">
+          ₹{Number(existingReturn.refundAmount || 0).toLocaleString("en-IN")}
+        </dd>
+      </div>
+
+      {existingReturn.status === "refunded" && (
+        <>
+          <div className="grid grid-cols-[125px_minmax(0,1fr)] items-start gap-2">
+            <dt className="text-slate-500">Transfer reference</dt>
+            <dd className="break-all font-medium text-slate-800">
+              {existingReturn.bankTransferReference || "Not provided"}
+            </dd>
+          </div>
+
+          {existingReturn.refundProcessedAt && (
+            <div className="grid grid-cols-[125px_minmax(0,1fr)] items-start gap-2">
+              <dt className="text-slate-500">Refunded on</dt>
+              <dd className="font-medium text-slate-800">
+                {formatDate(existingReturn.refundProcessedAt)}
+              </dd>
+            </div>
+          )}
+        </>
+      )}
+    </dl>
+  </div>
+)}
+
                       </div>
-                    ))}
+                      );
+                    })}
 
                   </div>
 

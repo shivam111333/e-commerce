@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   FaBars,
   FaList,
+  FaMoneyBillWave,
   FaShoppingBag,
   FaStore,
   FaTachometerAlt,
@@ -18,6 +19,7 @@ const menuItems = [
   { name: "Customer", icon: FaUser },
   { name: "Categories", icon: FaList },
   { name: "Orders", icon: FaShoppingBag },
+  { name: "Returns & Refunds", icon: FaMoneyBillWave },
 ];
 
 function AdminSidebar({ activeSection, setActiveSection, mobileOpen, onClose }) {

@@ -3,6 +3,7 @@ import Product from "../models/productSchema.js";
 import Variant from "../models/variantSchema.js";
 import Cart from "../models/cartSchema.js";
 import Payment from "../models/paymentSchema.js";
+import ReturnRequest from "../models/returnRequestSchema.js";
 import { formatInr, getMaxOrderAmount } from "../config/limits.js";
 
 // ==========================================
@@ -31,18 +32,18 @@ const ADMIN_COD_STATUSES = ["pending", "paid"];
  */
 export const syncCodOrderPayment = async (order) => {
   const activeItems = order.items.filter((i) => i.status !== "cancelled");
+  if (activeItems.length === 0) {
+    await syncOrderRefundPaymentStatus(order);
+    return;
+  }
 
-  // Everything cancelled: nothing left to collect
-  if (activeItems.length === 0) return;
-
-  const allPaid = activeItems.every((i) => i.paymentStatus === "paid");
+  const collectedStatuses = ["paid", "partially_refunded", "refunded"];
+  const allPaid =
+    activeItems.length > 0 &&
+    activeItems.every((i) => collectedStatuses.includes(i.paymentStatus));
   const allFailed = activeItems.every((i) => i.paymentStatus === "failed");
 
-  let newStatus = "pending"; // mixed states stay pending
-  if (allPaid) newStatus = "paid";
-  else if (allFailed) newStatus = "failed";
-
-  if (newStatus === "paid" && order.payment.status !== "paid") {
+  if (allPaid) {
     // Cash actually collected = non-cancelled items only
     const amount = activeItems.reduce(
       (sum, i) => sum + i.price * i.quantity,
@@ -71,9 +72,39 @@ export const syncCodOrderPayment = async (order) => {
     }
   }
 
-  order.payment.status = newStatus;
+  await syncOrderRefundPaymentStatus(order);
+
+  if (
+    order.payment.status !== "partially_refunded" &&
+    order.payment.status !== "refunded"
+  ) {
+    order.payment.status = allPaid ? "paid" : allFailed ? "failed" : "pending";
+  }
 };
 
+export const syncOrderRefundPaymentStatus = async (order) => {
+  const paidStatuses = ["paid", "partially_refunded", "refunded"];
+  const paidItems = order.items.filter((item) =>
+    paidStatuses.includes(item.paymentStatus)
+  );
+  const paidAmount = paidItems.reduce(
+    (sum, item) => sum + item.price * item.quantity,
+    0
+  );
+
+  if (paidAmount <= 0) return;
+
+  const refunds = await ReturnRequest.aggregate([
+    { $match: { order: order._id, status: "refunded" } },
+    { $group: { _id: null, amount: { $sum: "$refundAmount" } } },
+  ]);
+  const refundedAmount = Number(refunds[0]?.amount || 0);
+
+  if (refundedAmount > 0) {
+    order.payment.status =
+      refundedAmount >= paidAmount ? "refunded" : "partially_refunded";
+  }
+};
 // ==========================================
 // CUSTOMER: my orders
 // ==========================================
@@ -518,6 +549,9 @@ export const updateVendorOrderItemStatus = async (req, res) => {
         item.cancelledAt = new Date();
       } else {
         item.status = status;
+        if (status === "delivered") {
+          item.deliveredAt = new Date();
+        }
       }
     }
 
@@ -574,10 +608,48 @@ export const getAllOrder = async (req, res) => {
     const orders = await Order.find(PLACED_ORDER_FILTER).sort({
       createdAt: -1,
     });
+    const orderIds = orders.map((order) => order._id);
+    const returnRequests = orderIds.length
+      ? await ReturnRequest.find({ order: { $in: orderIds } })
+          .select(
+            "order item requestedQuantity refundAmount status refundProcessedAt createdAt"
+          )
+          .lean()
+      : [];
+    const requestsByOrderAndItem = new Map(
+      returnRequests.map((request) => [
+        `${request.order}:${request.item}`,
+        request,
+      ])
+    );
+    const data = orders.map((orderDocument) => {
+      const order = orderDocument.toObject();
+      order.items = order.items.map((item) => {
+        const returnRequest = requestsByOrderAndItem.get(
+          `${order._id}:${item._id}`
+        );
+        return {
+          ...item,
+          ...(returnRequest
+            ? {
+                returnRequest: {
+                  _id: returnRequest._id,
+                  requestedQuantity: returnRequest.requestedQuantity,
+                  refundAmount: returnRequest.refundAmount,
+                  status: returnRequest.status,
+                  refundProcessedAt: returnRequest.refundProcessedAt,
+                  createdAt: returnRequest.createdAt,
+                },
+              }
+            : {}),
+        };
+      });
+      return order;
+    });
 
     return res.status(200).json({
       success: true,
-      data: orders,
+      data,
     });
   } catch (err) {
     return res.status(500).json({
@@ -628,7 +700,25 @@ export const updateOrderPaymentStatus = async (req, res) => {
       });
     }
 
-    // Paid is final for now (no refund flow yet).
+    if (
+      order.payment.status === "partially_refunded" ||
+      order.payment.status === "refunded"
+    ) {
+      return res.status(409).json({
+        success: false,
+        message: "Refunded order payment status cannot be changed",
+      });
+    }
+
+    if (await ReturnRequest.exists({ order: order._id })) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "Order payment cannot be changed after a return request has been submitted",
+      });
+    }
+
+    // Paid is final for the COD collection controls.
     // Asking for "paid" again is harmless, so answer with success.
     if (order.payment.status === "paid") {
       if (paymentStatus === "paid") {
@@ -749,6 +839,18 @@ export const updateOrderItemPaymentStatus = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: "Order item not found",
+      });
+    }
+
+    if (
+      item.paymentStatus === "partially_refunded" ||
+      item.paymentStatus === "refunded" ||
+      (await ReturnRequest.exists({ order: order._id, item: item._id }))
+    ) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "Item payment cannot be changed after a return request has been submitted",
       });
     }
 

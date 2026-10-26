@@ -9,6 +9,7 @@ import VendorsSection from "./sections/VendorsSection.jsx";
 import CategoriesSection from "./sections/CategoriesSection.jsx";
 import OrdersSection from "./sections/OrdersSection.jsx";
 import UsersSection from './sections/UsersSection.jsx'
+import ReturnsRefundsSection from "./sections/ReturnsRefundsSection.jsx";
 
 
 function AdminDashboard() {
@@ -31,6 +32,9 @@ function AdminDashboard() {
 
             case "Orders":
                 return <OrdersSection />;
+
+            case "Returns & Refunds":
+                return <ReturnsRefundsSection />;
 
             case "Customer":
                 return <UsersSection/>;

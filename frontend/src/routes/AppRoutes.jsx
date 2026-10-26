@@ -12,6 +12,7 @@ import ProductDeatils from "../component/ProductDetails.jsx";
 import Cart from "../pages/Customer/Cart.jsx";
 import Checkout from "../pages/Customer/Checkout.jsx";
 import Order from "../pages/Customer/Orders.jsx";
+import ReturnRequest from "../pages/Customer/ReturnRequest.jsx";
 
 // Auth
 import Login from "../pages/auth/Login.jsx";
@@ -71,6 +72,10 @@ function AppRoutes() {
         <Route
           path="/orders"
           element={<Order />}
+        />
+        <Route
+          path="/orders/:orderId/items/:itemId/return"
+          element={<ReturnRequest />}
         />
 
       </Route>
