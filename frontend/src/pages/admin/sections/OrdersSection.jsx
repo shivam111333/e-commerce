@@ -569,6 +569,12 @@ function OrderSection() {
                         const itemTotal =
                           Number(item.price) * Number(item.quantity);
 
+                        // Variant details used to tell apart orders of the
+                        // same product (colour, size, etc.)
+                        const attributeEntries = Object.entries(
+                          item.attributes || {}
+                        );
+
                         // paid online, then cancelled -> money must go back
                         const needsRefund =
                           isCancelled &&
@@ -595,24 +601,22 @@ function OrderSection() {
                                   {item.name}
                                 </h3>
 
-                                {item.attributes &&
-                                  Object.keys(item.attributes).length > 0 && (
-                                    <div className="mt-2 flex flex-wrap gap-2">
-                                      {Object.entries(item.attributes).map(
-                                        ([key, value]) => (
-                                          <span
-                                            key={key}
-                                            className="rounded bg-gray-100 px-3 py-1 text-sm"
-                                          >
-                                            <span className="font-medium">
-                                              {key}:
-                                            </span>{" "}
-                                            {value}
-                                          </span>
-                                        )
-                                      )}
-                                    </div>
-                                  )}
+                                {/* Variant details */}
+                                {attributeEntries.length > 0 && (
+                                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                                    {attributeEntries.map(([key, value]) => (
+                                      <span
+                                        key={key}
+                                        className="rounded-md border border-indigo-100 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700"
+                                      >
+                                        <span className="capitalize text-indigo-500">
+                                          {key}:
+                                        </span>{" "}
+                                        {value}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
 
                                 <div className="mt-3 text-sm text-gray-500">
                                   Quantity: {item.quantity}

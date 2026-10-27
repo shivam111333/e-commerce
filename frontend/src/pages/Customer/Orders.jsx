@@ -9,6 +9,11 @@ import {
 import { toast } from "react-toastify";
 import api from "../../api/axios.jsx";
 
+// Shown to the customer with the refund notice. Change it to match what your
+// payment provider / bank actually takes.
+const REFUND_TIME_NOTE =
+  "It usually takes 5–7 business days to show in your account once processed.";
+
 function Orders() {
   const navigate = useNavigate();
 
@@ -68,11 +73,8 @@ function Orders() {
       case "confirmed":
         return "bg-blue-100 text-blue-700";
 
-
-
       case "shipped":
         return "bg-purple-100 text-purple-700";
-
 
       case "delivered":
         return "bg-green-100 text-green-700";
@@ -92,6 +94,7 @@ function Orders() {
         return "bg-green-100 text-green-700";
 
       case "failed":
+      case "cancelled":
         return "bg-red-100 text-red-700";
 
       case "refunded":
@@ -260,6 +263,19 @@ function Orders() {
                         withinReturnWindow &&
                         !existingReturn;
 
+                      // Cancelled after the customer already paid online:
+                      // the money has to go back to them.
+                      const isCancelled = item.status === "cancelled";
+                      const paidOnline =
+                        order.payment?.method === "online" &&
+                        ["paid", "partially_refunded", "refunded"].includes(
+                          order.payment?.status
+                        );
+                      const showRefundNotice = isCancelled && paidOnline;
+                      const refundDone = item.paymentStatus === "refunded";
+                      const cancelRefundAmount =
+                        Number(item.price) * Number(item.quantity);
+
                       return (
                       <div
                         key={item._id}
@@ -335,10 +351,10 @@ function Orders() {
                             <div className="mt-2">
                               <p className="text-xs text-gray-500 mb-1">Item Payment:</p>
                               <span
-                                className={`inline-block px-2 py-1 rounded text-xs font-medium ${getPaymentStatusClass(item.paymentStatus)
+                                className={`inline-block px-2 py-1 rounded text-xs font-medium capitalize ${getPaymentStatusClass(item.paymentStatus)
                                   }`}
                               >
-                                {item.paymentStatus}
+                                {item.paymentStatus?.replace(/_/g, " ")}
                               </span>
                             </div>
 
@@ -356,7 +372,7 @@ function Orders() {
                               </button>
                             )}
 
-                            {item.status === "cancelled" && (
+                            {isCancelled && (
                               <div className="mt-3 text-sm text-red-600 border-t pt-2">
                                 <p className="font-medium">Cancelled</p>
 
@@ -370,7 +386,34 @@ function Orders() {
                             )}
                           </div>
                         </div>
-                     
+
+                        {/* Refund notice: cancelled item that was paid online */}
+                        {showRefundNotice && (
+                          <div
+                            className={`mt-4 w-full rounded-lg border p-3 text-left text-sm sm:p-4 ${
+                              refundDone
+                                ? "border-green-200 bg-green-50 text-green-800"
+                                : "border-blue-200 bg-blue-50 text-blue-900"
+                            }`}
+                          >
+                            <p className="font-semibold">
+                              {refundDone
+                                ? "Refund completed"
+                                : "Your refund will be provided"}
+                            </p>
+
+                            <p className="mt-1">
+                              {refundDone
+                                ? `₹${cancelRefundAmount.toLocaleString(
+                                    "en-IN"
+                                  )} has been refunded to your original payment method.`
+                                : `This item was cancelled and you had already paid online, so ₹${cancelRefundAmount.toLocaleString(
+                                    "en-IN"
+                                  )} will be refunded to your original payment method. ${REFUND_TIME_NOTE}`}
+                            </p>
+                          </div>
+                        )}
+
 {existingReturn && (
   <div className="mt-4 w-full max-w-[650px] rounded-xl border border-blue-200 bg-blue-50/60 p-4 text-left text-sm text-slate-700">
     <p className="mb-3 flex items-center gap-2 font-semibold text-slate-900">

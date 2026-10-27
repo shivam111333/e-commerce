@@ -491,7 +491,7 @@ export const getVendorOrders = async (req, res) => {
           );
 
           return {
-            ...item.toObject(),
+            ...item.toObject({ flattenMaps: true }),
 
             // Attach return information if a request exists.
             returnRequest: returnRequest
@@ -681,6 +681,8 @@ if (
         );
 
         item.status = "cancelled";
+        item.paymentStatus = "cancelled";          // <-- add this
+
         item.cancellationReason = cancellationReason.trim();
         item.cancelledAt = new Date();
       } else {
@@ -759,7 +761,7 @@ export const getAllOrder = async (req, res) => {
       ])
     );
     const data = orders.map((orderDocument) => {
-      const order = orderDocument.toObject();
+      const order = orderDocument.toObject({ flattenMaps: true });
       order.items = order.items.map((item) => {
         const returnRequest = requestsByOrderAndItem.get(
           `${order._id}:${item._id}`
