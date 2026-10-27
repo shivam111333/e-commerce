@@ -25,11 +25,10 @@ function Timeline({ status }) {
   if (status === "rejected" || status === "cancelled") {
     return (
       <div
-        className={`rounded-xl px-4 py-3 text-sm font-medium ${
-          status === "rejected"
+        className={`rounded-xl px-4 py-3 text-sm font-medium ${status === "rejected"
             ? "bg-red-50 text-red-700"
             : "bg-slate-100 text-slate-600"
-        }`}
+          }`}
       >
         This request was {formatStatus(status).toLowerCase()}. No further
         action is needed.
@@ -58,9 +57,8 @@ function Timeline({ status }) {
           <li key={step} className="relative flex gap-3 pb-4 last:pb-0">
             {!isLast && (
               <span
-                className={`absolute left-[9px] top-5 h-full w-0.5 ${
-                  isDone ? "bg-emerald-400" : "bg-slate-200"
-                }`}
+                className={`absolute left-[9px] top-5 h-full w-0.5 ${isDone ? "bg-emerald-400" : "bg-slate-200"
+                  }`}
               />
             )}
             <span
@@ -129,9 +127,8 @@ function ActionButton({ label, color, disabled, onClick, fullWidth }) {
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={`rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${
-        fullWidth ? "w-full" : "flex-1"
-      } ${color}`}
+      className={`rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${fullWidth ? "w-full" : "flex-1"
+        } ${color}`}
     >
       {label}
     </button>
@@ -358,26 +355,43 @@ function ReturnRequestDetails({ details, updating, onClose, onUpdate }) {
             </div>
           )}
 
+
+
           {status === "approved" && (
-            <ActionButton
-              fullWidth
-              label="Mark received"
-              color="bg-blue-600 hover:bg-blue-700"
-              disabled={updating}
-              onClick={() => onUpdate("received")}
-            />
+            <div className="flex gap-2">
+              <ActionButton
+                label="Mark received"
+                color="bg-blue-600 hover:bg-blue-700"
+                disabled={updating}
+                onClick={() => onUpdate("received")}
+              />
+
+              <ActionButton
+                label="Reject"
+                color="bg-red-600 hover:bg-red-700"
+                disabled={updating}
+                onClick={askToReject}
+              />
+            </div>
           )}
 
           {status === "received" && (
-            <ActionButton
-              fullWidth
-              label="Mark refund pending"
-              color="bg-orange-600 hover:bg-orange-700"
-              disabled={updating}
-              onClick={() => onUpdate("refund_pending")}
-            />
-          )}
+            <div className="flex gap-2">
+              <ActionButton
+                label="Mark refund pending"
+                color="bg-orange-600 hover:bg-orange-700"
+                disabled={updating}
+                onClick={() => onUpdate("refund_pending")}
+              />
 
+              <ActionButton
+                label="Reject"
+                color="bg-red-600 hover:bg-red-700"
+                disabled={updating}
+                onClick={askToReject}
+              />
+            </div>
+          )}
           {status === "refund_pending" && (
             <>
               <label className="block text-sm font-medium text-slate-700">

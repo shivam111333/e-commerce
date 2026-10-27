@@ -212,15 +212,17 @@ export const getAdminReturnRequest = async (req, res) => {
   }
 };
 
+
 const ALLOWED_RETURN_TRANSITIONS = {
   requested: ["approved", "rejected"],
-  approved: ["received"],
-  received: ["refund_pending"],
+  approved: ["received", "rejected"],
+  received: ["refund_pending","rejected"],
   refund_pending: ["refunded"],
   rejected: [],
   refunded: [],
   cancelled: [],
 };
+
 
 export const updateAdminReturnRequestStatus = async (req, res) => {
   try {

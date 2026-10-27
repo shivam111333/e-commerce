@@ -20,14 +20,14 @@ const paymentSchema = new mongoose.Schema(
     // (never set them to null) so the sparse unique index ignores them.
     razorpayOrderId: {
       type: String,
-      unique: true,
-      sparse: true,
+      // unique: true,
+      // sparse: true,
     },
 
     razorpayPaymentId: {
       type: String,
-      unique: true,
-      sparse: true,
+      // unique: true,
+      // sparse: true,
     },
 
     amount: {
@@ -94,5 +94,23 @@ const paymentSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+paymentSchema.index(
+  { razorpayOrderId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      razorpayOrderId: { $type: "string" },
+    },
+  }
+);
 
+paymentSchema.index(
+  { razorpayPaymentId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      razorpayPaymentId: { $type: "string" },
+    },
+  }
+);
 export default mongoose.model("Payment", paymentSchema);

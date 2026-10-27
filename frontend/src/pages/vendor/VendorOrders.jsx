@@ -13,14 +13,8 @@ import api from "../../api/axios";
 function VendorOrders() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  // Selected delivery status for each item
   const [selectedStatus, setSelectedStatus] = useState({});
-
-  // Cancellation reason for each item
   const [selectedReason, setSelectedReason] = useState({});
-
-  // Currently updating item
   const [updatingItem, setUpdatingItem] = useState(null);
 
   const navigate = useNavigate();
@@ -42,15 +36,11 @@ function VendorOrders() {
       setLoading(true);
 
       const response = await api.get("/order");
-
-      const data = response.data.data || [];
-
-      console.log("Vendor Orders:", data);
+      const data = response.data?.data || [];
 
       setOrders(data);
 
-      // Set selected status based on current status
-      // of every order item
+      // Initialize selected status for each item.
       const statusState = {};
 
       data.forEach((order) => {
@@ -63,6 +53,7 @@ function VendorOrders() {
     } catch (error) {
       if (error.response?.status === 404) {
         setOrders([]);
+        setSelectedStatus({});
       } else if (showError) {
         toast.error(
           error.response?.data?.message ||
@@ -76,6 +67,8 @@ function VendorOrders() {
 
   useEffect(() => {
     fetchOrders();
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // -----------------------------------------
@@ -88,21 +81,18 @@ function VendorOrders() {
       [itemId]: status,
     }));
 
-    // Remove old cancellation reason if
-    // vendor changes away from cancellation
+    // Clear cancellation reason if not cancelling.
     if (status !== "cancelled") {
       setSelectedReason((prev) => {
         const updated = { ...prev };
-
         delete updated[itemId];
-
         return updated;
       });
     }
   };
 
   // -----------------------------------------
-  // REASON CHANGE
+  // CANCELLATION REASON CHANGE
   // -----------------------------------------
 
   const handleReasonChange = (itemId, reason) => {
@@ -126,8 +116,10 @@ function VendorOrders() {
 
     const cancellationReason = selectedReason[itemId];
 
-    // Cancellation requires a reason
-    if (status === "cancelled" && !cancellationReason) {
+    if (
+      status === "cancelled" &&
+      !cancellationReason
+    ) {
       toast.error("Please select a cancellation reason");
       return;
     }
@@ -135,14 +127,10 @@ function VendorOrders() {
     try {
       setUpdatingItem(itemId);
 
-      // IMPORTANT:
-      // Vendor is only allowed to update delivery status.
-      // Do NOT send paymentStatus from the vendor frontend.
       await api.patch(
         `/order/${orderId}/item/${itemId}/status`,
         {
           status,
-
           cancellationReason:
             status === "cancelled"
               ? cancellationReason
@@ -150,18 +138,15 @@ function VendorOrders() {
         }
       );
 
-      // Show ONLY ONE success toast
       toast.success(
         status === "cancelled"
           ? "Order item cancelled successfully"
           : "Order status updated successfully"
       );
 
-      // Refresh orders silently.
-      // If this request fails, it will NOT show another toast.
+      // Refresh data without showing a second error toast.
       await fetchOrders(false);
     } catch (error) {
-      // Only the actual update request shows this error toast
       toast.error(
         error.response?.data?.message ||
           "Failed to update order"
@@ -172,35 +157,25 @@ function VendorOrders() {
   };
 
   // -----------------------------------------
-  // STATUS LABEL
+  // DELIVERY STATUS LABEL
   // -----------------------------------------
 
   const getStatusLabel = (status) => {
-    switch (status) {
-      case "pending":
-        return "Pending";
+    const labels = {
+      pending: "Pending",
+      confirmed: "Confirmed",
+      processing: "Processing",
+      shipped: "Shipped",
+      out_for_delivery: "Out for delivery",
+      delivered: "Delivered",
+      cancelled: "Cancelled",
+    };
 
-      case "confirmed":
-        return "Confirmed";
-
-      
-      case "shipped":
-        return "Shipped";
-
-
-      case "delivered":
-        return "Delivered";
-
-      case "cancelled":
-        return "Cancelled";
-
-      default:
-        return status;
-    }
+    return labels[status] || status || "Unknown";
   };
 
   // -----------------------------------------
-  // STATUS COLOR CLASS
+  // DELIVERY STATUS COLOR
   // -----------------------------------------
 
   const getStatusClass = (status) => {
@@ -232,25 +207,53 @@ function VendorOrders() {
   };
 
   // -----------------------------------------
-  // PAYMENT STATUS COLOR CLASS
+  // PAYMENT STATUS COLOR
   // -----------------------------------------
 
   const getPaymentStatusClass = (status) => {
     switch (status) {
-      case "pending":
-        return "bg-yellow-100 text-yellow-700";
-
       case "paid":
         return "bg-green-100 text-green-700";
+
+      case "pending":
+        return "bg-yellow-100 text-yellow-700";
 
       case "failed":
         return "bg-red-100 text-red-700";
 
-      case "refunded":
+      case "partially_refunded":
         return "bg-orange-100 text-orange-700";
 
-      case "partially_refunded":
-        return "bg-amber-100 text-amber-700";
+      case "refunded":
+        return "bg-purple-100 text-purple-700";
+
+      default:
+        return "bg-gray-100 text-gray-700";
+    }
+  };
+
+  // -----------------------------------------
+  // RETURN STATUS COLOR
+  // -----------------------------------------
+
+  const getReturnStatusClass = (status) => {
+    switch (status) {
+      case "requested":
+        return "bg-blue-100 text-blue-700";
+
+      case "approved":
+      case "received":
+        return "bg-indigo-100 text-indigo-700";
+
+      case "refund_pending":
+        return "bg-yellow-100 text-yellow-700";
+
+      case "refunded":
+        return "bg-green-100 text-green-700";
+
+      case "rejected":
+      case "cancelled":
+        return "bg-red-100 text-red-700";
 
       default:
         return "bg-gray-100 text-gray-700";
@@ -264,9 +267,7 @@ function VendorOrders() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-600">
-          Loading orders...
-        </p>
+        <p className="text-gray-600">Loading orders...</p>
       </div>
     );
   }
@@ -279,6 +280,14 @@ function VendorOrders() {
     return (
       <div className="min-h-screen bg-gray-50 px-4 py-10">
         <div className="max-w-5xl mx-auto">
+          <button
+            onClick={() => navigate("/vendor/dashboard")}
+            className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6"
+          >
+            <FaArrowLeft />
+            Back to Dashboard
+          </button>
+
           <div className="bg-white rounded-xl shadow-sm p-10 text-center">
             <FaBox className="mx-auto text-5xl text-gray-300 mb-4" />
 
@@ -287,8 +296,7 @@ function VendorOrders() {
             </h2>
 
             <p className="text-gray-500 mt-2">
-              You don't have any orders for your
-              products yet.
+              You don't have any orders for your products yet.
             </p>
           </div>
         </div>
@@ -303,7 +311,6 @@ function VendorOrders() {
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-8">
       <div className="max-w-6xl mx-auto">
-
         {/* PAGE TITLE */}
 
         <div className="mb-8">
@@ -334,17 +341,14 @@ function VendorOrders() {
               key={order._id}
               className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden"
             >
-
               {/* ORDER HEADER */}
 
               <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                   <div>
                     <p className="text-sm text-gray-500">
                       Order Number
                     </p>
-
                     <p className="font-semibold text-gray-800 break-all">
                       {order.orderNumber || order._id}
                     </p>
@@ -354,7 +358,6 @@ function VendorOrders() {
                     <p className="text-sm text-gray-500">
                       Payment Method
                     </p>
-
                     <p className="font-medium text-gray-800">
                       {order.payment?.method?.toUpperCase() ||
                         "N/A"}
@@ -365,13 +368,15 @@ function VendorOrders() {
                     <p className="text-sm text-gray-500">
                       Payment Status
                     </p>
-
                     <span
                       className={`inline-block mt-1 px-3 py-1 rounded-full text-xs font-medium ${getPaymentStatusClass(
                         order.payment?.status
                       )}`}
                     >
-                      {order.payment?.status || "N/A"}
+                      {order.payment?.status?.replace(
+                        /_/g,
+                        " "
+                      ) || "N/A"}
                     </span>
                   </div>
 
@@ -379,121 +384,103 @@ function VendorOrders() {
                     <p className="text-sm text-gray-500">
                       Your Total
                     </p>
-
                     <p className="font-bold text-gray-800">
                       ₹
-                      {order.vendorTotal?.toFixed(2)}
+                      {Number(
+                        order.vendorTotal || 0
+                      ).toLocaleString("en-IN", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
                     </p>
                   </div>
-
                 </div>
               </div>
 
               {/* CUSTOMER INFORMATION */}
 
               <div className="px-6 py-5 border-b border-gray-200">
-
                 <div className="flex items-center gap-2 mb-3">
                   <FaUser className="text-gray-500" />
-
                   <h3 className="font-semibold text-gray-800">
                     Customer Information
                   </h3>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-
                   <div>
-                    <span className="text-gray-500">
-                      Name
-                    </span>
-
+                    <span className="text-gray-500">Name</span>
                     <p className="font-medium text-gray-800">
                       {order.user?.name || "N/A"}
                     </p>
                   </div>
 
                   <div>
-                    <span className="text-gray-500">
-                      Email
-                    </span>
-
+                    <span className="text-gray-500">Email</span>
                     <p className="font-medium text-gray-800">
                       {order.user?.email || "N/A"}
                     </p>
                   </div>
 
                   <div>
-                    <span className="text-gray-500">
-                      Phone
-                    </span>
-
+                    <span className="text-gray-500">Phone</span>
                     <p className="font-medium text-gray-800">
                       {order.user?.phone || "N/A"}
                     </p>
                   </div>
-
                 </div>
               </div>
 
               {/* SHIPPING ADDRESS */}
 
               <div className="px-6 py-5 border-b border-gray-200">
-
                 <div className="flex items-center gap-2 mb-3">
                   <FaMapMarkerAlt className="text-gray-500" />
-
                   <h3 className="font-semibold text-gray-800">
                     Shipping Address
                   </h3>
                 </div>
 
                 <div className="text-sm text-gray-600 space-y-1">
-
-                  <p>
-                    <span className="font-medium text-gray-800">
-                      {order.shippingAddress?.name}
-                    </span>
+                  <p className="font-medium text-gray-800">
+                    {order.shippingAddress?.name || "N/A"}
                   </p>
 
                   <p>
-                    {order.shippingAddress?.address}
+                    {order.shippingAddress?.address || "N/A"}
                   </p>
 
                   <p>
-                    {order.shippingAddress?.city},{" "}
-                    {order.shippingAddress?.state} -{" "}
-                    {order.shippingAddress?.pincode}
+                    {order.shippingAddress?.city || ""}
+                    {order.shippingAddress?.state
+                      ? `, ${order.shippingAddress.state}`
+                      : ""}
+                    {order.shippingAddress?.pincode
+                      ? ` - ${order.shippingAddress.pincode}`
+                      : ""}
                   </p>
 
                   <p>
-                    Phone:{" "}
-                    {order.shippingAddress?.phone}
+                    Phone: {order.shippingAddress?.phone || "N/A"}
                   </p>
-
                 </div>
               </div>
 
               {/* PRODUCTS */}
 
               <div className="px-6 py-5">
-
                 <h3 className="font-semibold text-gray-800 mb-4">
                   Your Products
                 </h3>
 
                 <div className="space-y-5">
-
                   {order.items?.map((item) => {
-
-                    const currentStatus =
-                      item.status;
-
+                    const currentStatus = item.status;
                     const currentPaymentStatus =
                       item.paymentStatus;
 
                     const selected =
-                      selectedStatus[item._id] ||
+                      selectedStatus[item._id] ??
                       currentStatus;
 
                     const isUpdating =
@@ -509,86 +496,82 @@ function VendorOrders() {
                     const statusChanged =
                       selected !== currentStatus;
 
+                    const returnRequest = item.returnRequest;
+
                     return (
                       <div
                         key={item._id}
                         className="border border-gray-200 rounded-lg p-5"
                       >
-
                         <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-5">
-
                           {/* PRODUCT INFO */}
 
-                          <div className="flex-1">
-
-                            {/* UNIQUE ORDER ITEM ID */}
-
+                          <div className="flex-1 min-w-0">
                             <p className="text-xs text-gray-400 mb-1 break-all">
                               Item ID: {item._id}
                             </p>
 
                             <h4 className="text-lg font-semibold text-gray-800">
-                              {item.name}
+                              {item.name || "Product"}
                             </h4>
 
                             <div className="mt-2 space-y-1 text-sm text-gray-600">
-
                               <p>
                                 Price: ₹
-                                {item.price?.toFixed(2)}
+                                {Number(
+                                  item.price || 0
+                                ).toLocaleString("en-IN", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
                               </p>
 
-                              <p>
-                                Quantity:{" "}
-                                {item.quantity}
-                              </p>
+                              <p>Quantity: {item.quantity}</p>
 
                               <p>
                                 Total: ₹
                                 {(
-                                  item.price *
-                                  item.quantity
-                                ).toFixed(2)}
+                                  Number(item.price || 0) *
+                                  Number(item.quantity || 0)
+                                ).toLocaleString("en-IN", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}
                               </p>
-
                             </div>
 
-                            {/* ATTRIBUTES */}
+                            {/* VARIANT ATTRIBUTES */}
 
                             {item.attributes &&
-                              Object.keys(
-                                item.attributes
-                              ).length > 0 && (
+                              Object.keys(item.attributes).length >
+                                0 && (
                                 <div className="mt-3">
-
                                   <p className="text-sm font-medium text-gray-700 mb-1">
                                     Variant
                                   </p>
 
                                   <div className="flex flex-wrap gap-2">
-
                                     {Object.entries(
-                                      item.attributes
-                                    ).map(
-                                      ([key, value]) => (
-                                        <span
-                                          key={key}
-                                          className="px-2 py-1 bg-gray-100 rounded text-xs text-gray-700"
-                                        >
-                                          {key}:{" "}
-                                          {value}
-                                        </span>
-                                      )
-                                    )}
-
+                                      item.attributes instanceof Map
+                                        ? Object.fromEntries(
+                                            item.attributes
+                                          )
+                                        : item.attributes
+                                    ).map(([key, value]) => (
+                                      <span
+                                        key={key}
+                                        className="px-2 py-1 bg-gray-100 rounded text-xs text-gray-700"
+                                      >
+                                        {key}: {String(value)}
+                                      </span>
+                                    ))}
                                   </div>
                                 </div>
                               )}
 
-                            {/* CURRENT STATUS */}
+                            {/* DELIVERY STATUS */}
 
                             <div className="mt-4">
-
                               <span className="text-sm text-gray-500">
                                 Current Status:
                               </span>
@@ -598,17 +581,93 @@ function VendorOrders() {
                                   currentStatus
                                 )}`}
                               >
-                                {getStatusLabel(
-                                  currentStatus
-                                )}
+                                {getStatusLabel(currentStatus)}
                               </span>
-
                             </div>
 
-                            {/* CURRENT PAYMENT STATUS */}
+                            {/* RETURN & REFUND SUMMARY */}
+
+                            {returnRequest && (
+                              <div className="mt-4 w-full rounded-xl border border-blue-200 bg-blue-50/60 p-4 text-left text-sm text-slate-700">
+                                <p className="mb-3 flex items-center gap-2 font-semibold text-slate-900">
+                                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-100 text-blue-700">
+                                    ↩
+                                  </span>
+                                  Return &amp; refund summary
+                                </p>
+
+                                <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+                                  <div className="flex flex-col gap-1">
+                                    <dt className="text-slate-500">
+                                      Return status
+                                    </dt>
+                                    <dd>
+                                      <span
+                                        className={`inline-block rounded-full px-3 py-1 text-xs font-semibold capitalize ${getReturnStatusClass(
+                                          returnRequest.status
+                                        )}`}
+                                      >
+                                        {returnRequest.status?.replace(
+                                          /_/g,
+                                          " "
+                                        ) || "Unknown"}
+                                      </span>
+                                    </dd>
+                                  </div>
+
+                                  <div>
+                                    <dt className="text-slate-500">
+                                      Return quantity
+                                    </dt>
+                                    <dd className="mt-1 font-medium text-slate-800">
+                                      {returnRequest.requestedQuantity}
+                                    </dd>
+                                  </div>
+
+                                  <div>
+                                    <dt className="text-slate-500">
+                                      Refund amount
+                                    </dt>
+                                    <dd className="mt-1 font-semibold text-slate-900">
+                                      ₹
+                                      {Number(
+                                        returnRequest.refundAmount || 0
+                                      ).toLocaleString("en-IN", {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                      })}
+                                    </dd>
+                                  </div>
+
+                                  {returnRequest.status ===
+                                    "refunded" && (
+                                    <div>
+                                      <dt className="text-slate-500">
+                                        Refunded on
+                                      </dt>
+                                      <dd className="mt-1 font-medium text-slate-800">
+                                        {returnRequest.refundProcessedAt
+                                          ? new Date(
+                                              returnRequest.refundProcessedAt
+                                            ).toLocaleDateString(
+                                              "en-IN",
+                                              {
+                                                day: "numeric",
+                                                month: "short",
+                                                year: "numeric",
+                                              }
+                                            )
+                                          : "Date not available"}
+                                      </dd>
+                                    </div>
+                                  )}
+                                </dl>
+                              </div>
+                            )}
+
+                            {/* ITEM PAYMENT STATUS */}
 
                             <div className="mt-3">
-
                               <span className="text-sm text-gray-500">
                                 Item Payment Status:
                               </span>
@@ -618,23 +677,22 @@ function VendorOrders() {
                                   currentPaymentStatus
                                 )}`}
                               >
-                                {currentPaymentStatus}
+                                {currentPaymentStatus?.replace(
+                                  /_/g,
+                                  " "
+                                ) || "N/A"}
                               </span>
-
                             </div>
 
                             {/* CANCELLATION INFO */}
 
-                            {currentStatus ===
-                              "cancelled" && (
+                            {currentStatus === "cancelled" && (
                               <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-3">
-
                                 <p className="text-sm text-red-700">
                                   <span className="font-semibold">
                                     Reason:
                                   </span>{" "}
-                                  {item.cancellationReason ||
-                                    "N/A"}
+                                  {item.cancellationReason || "N/A"}
                                 </p>
 
                                 {item.cancelledAt && (
@@ -644,33 +702,28 @@ function VendorOrders() {
                                     </span>{" "}
                                     {new Date(
                                       item.cancelledAt
-                                    ).toLocaleString()}
+                                    ).toLocaleString("en-IN")}
                                   </p>
                                 )}
-
                               </div>
                             )}
-
                           </div>
 
                           {/* STATUS MANAGEMENT */}
 
                           <div className="w-full lg:w-80 space-y-4">
-
-                            {/* ORDER STATUS SELECTOR */}
-
                             <div>
-
-                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                              <label
+                                htmlFor={`status-${item._id}`}
+                                className="block text-sm font-medium text-gray-700 mb-2"
+                              >
                                 Update Status
                               </label>
 
                               <select
-                                value={selected}
-                                disabled={
-                                  isLocked ||
-                                  isUpdating
-                                }
+                                id={`status-${item._id}`}
+                                value={selected || ""}
+                                disabled={isLocked || isUpdating}
                                 onChange={(e) =>
                                   handleStatusChange(
                                     item._id,
@@ -679,7 +732,6 @@ function VendorOrders() {
                                 }
                                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
                               >
-
                                 <option value="pending">
                                   Pending
                                 </option>
@@ -688,13 +740,10 @@ function VendorOrders() {
                                   Confirmed
                                 </option>
 
-                             
-
                                 <option value="shipped">
                                   Shipped
                                 </option>
 
-                          
                                 <option value="delivered">
                                   Delivered
                                 </option>
@@ -702,96 +751,87 @@ function VendorOrders() {
                                 <option value="cancelled">
                                   Cancel Order
                                 </option>
-
                               </select>
-
                             </div>
 
                             {/* CANCELLATION REASON */}
 
-                            {showCancellation &&
-                              !isLocked && (
-                                <div>
+                            {showCancellation && !isLocked && (
+                              <div>
+                                <label
+                                  htmlFor={`reason-${item._id}`}
+                                  className="block text-sm font-medium text-gray-700 mb-2"
+                                >
+                                  Cancellation Reason
+                                </label>
 
-                                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Cancellation
-                                    Reason
-                                  </label>
+                                <select
+                                  id={`reason-${item._id}`}
+                                  value={
+                                    selectedReason[item._id] || ""
+                                  }
+                                  disabled={isUpdating}
+                                  onChange={(e) =>
+                                    handleReasonChange(
+                                      item._id,
+                                      e.target.value
+                                    )
+                                  }
+                                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:bg-gray-100"
+                                >
+                                  <option value="">
+                                    Select reason
+                                  </option>
 
-                                  <select
-                                    value={
-                                      selectedReason[
-                                        item._id
-                                      ] || ""
-                                    }
-                                    disabled={
-                                      isUpdating
-                                    }
-                                    onChange={(e) =>
-                                      handleReasonChange(
-                                        item._id,
-                                        e.target.value
-                                      )
-                                    }
-                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:bg-gray-100"
-                                  >
-
-                                    <option value="">
-                                      Select reason
-                                    </option>
-
-                                    {cancellationReasons.map(
-                                      (reason) => (
-                                        <option
-                                          key={reason}
-                                          value={reason}
-                                        >
-                                          {reason}
-                                        </option>
-                                      )
-                                    )}
-
-                                  </select>
-
-                                </div>
-                              )}
+                                  {cancellationReasons.map(
+                                    (reason) => (
+                                      <option
+                                        key={reason}
+                                        value={reason}
+                                      >
+                                        {reason}
+                                      </option>
+                                    )
+                                  )}
+                                </select>
+                              </div>
+                            )}
 
                             {/* UPDATE BUTTON */}
 
-                            {!isLocked &&
-                              statusChanged && (
-                                <button
-                                  type="button"
-                                  disabled={isUpdating}
-                                  onClick={() =>
-                                    handleUpdateStatus(
-                                      order._id,
-                                      item._id
-                                    )
-                                  }
-                                  className="w-full bg-black text-white py-2.5 rounded-lg text-sm font-medium hover:bg-gray-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                  {isUpdating
-                                    ? "Updating..."
-                                    : "Update Status"}
-                                </button>
-                              )}
+                            {!isLocked && statusChanged && (
+                              <button
+                                type="button"
+                                disabled={isUpdating}
+                                onClick={() =>
+                                  handleUpdateStatus(
+                                    order._id,
+                                    item._id
+                                  )
+                                }
+                                className="w-full bg-black text-white py-2.5 rounded-lg text-sm font-medium hover:bg-gray-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {isUpdating
+                                  ? "Updating..."
+                                  : "Update Status"}
+                              </button>
+                            )}
 
+                            {isLocked && (
+                              <p className="text-xs text-gray-500">
+                                This item can no longer be updated.
+                              </p>
+                            )}
                           </div>
-
                         </div>
-
                       </div>
                     );
                   })}
-
                 </div>
               </div>
-
             </div>
           ))}
         </div>
-
       </div>
     </div>
   );

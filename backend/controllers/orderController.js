@@ -19,7 +19,14 @@ const generateOrderNumber = () => {
 // online order that has actually been paid. Unpaid online checkouts must
 // never show up in customer, vendor or admin lists.
 const PLACED_ORDER_FILTER = {
-  $or: [{ "payment.method": "cod" }, { "payment.status": "paid" }],
+  $or: [
+    { "payment.method": "cod" },
+    {
+      "payment.status": {
+        $in: ["paid", "partially_refunded", "refunded"],
+      },
+    },
+  ],
 };
 
 const ADMIN_COD_STATUSES = ["pending", "paid"];
@@ -30,44 +37,93 @@ const ADMIN_COD_STATUSES = ["pending", "paid"];
  * Call it after changing an item's paymentStatus, or after an item is
  * cancelled, and then call order.save().
  */
+
+
 export const syncCodOrderPayment = async (order) => {
-  const activeItems = order.items.filter((i) => i.status !== "cancelled");
+  const activeItems = order.items.filter(
+    (item) => item.status !== "cancelled"
+  );
+
   if (activeItems.length === 0) {
     await syncOrderRefundPaymentStatus(order);
     return;
   }
 
-  const collectedStatuses = ["paid", "partially_refunded", "refunded"];
-  const allPaid =
-    activeItems.length > 0 &&
-    activeItems.every((i) => collectedStatuses.includes(i.paymentStatus));
-  const allFailed = activeItems.every((i) => i.paymentStatus === "failed");
+  const collectedStatuses = [
+    "paid",
+    "partially_refunded",
+    "refunded",
+  ];
+
+  const allPaid = activeItems.every((item) =>
+    collectedStatuses.includes(item.paymentStatus)
+  );
+
+  const allFailed = activeItems.every(
+    (item) => item.paymentStatus === "failed"
+  );
 
   if (allPaid) {
-    // Cash actually collected = non-cancelled items only
     const amount = activeItems.reduce(
-      (sum, i) => sum + i.price * i.quantity,
+      (sum, item) => sum + item.price * item.quantity,
       0
     );
 
-    try {
-      await Payment.create({
-        user: order.user,
-        order: order._id,
-        // no razorpayOrderId / razorpayPaymentId for cash
-        method: "cash",
-        amount,
-        currency: "INR",
-        status: "captured",
-      });
-      console.log("COD cash Payment created for order", String(order._id));
-    } catch (err) {
-      // Ignore a duplicate-key error ONLY when a Payment for this order really
-      // exists. Any other duplicate-key error means an index problem.
-      if (err.code === 11000 && (await Payment.exists({ order: order._id }))) {
-        // already created: fine
-      } else {
-        throw err;
+    // First check whether a payment record already exists.
+    let payment = await Payment.findOne({ order: order._id });
+
+    if (payment && payment.method !== "cash") {
+      throw new Error(
+        "Cannot create a COD payment: this order already has a non-cash payment record"
+      );
+    }
+
+    if (payment) {
+      // Idempotent update: never create a second record.
+      payment.amount = amount;
+      payment.currency = "INR";
+      payment.method = "cash";
+      payment.status = "captured";
+
+      // Do not add razorpayOrderId or razorpayPaymentId.
+      await payment.save();
+    } else {
+      try {
+        // Upsert prevents repeated calls from creating duplicates.
+        payment = await Payment.findOneAndUpdate(
+  { order: order._id },
+  {
+    $setOnInsert: {
+      user: order.user,
+      amount,
+      currency: "INR",
+      method: "cash",
+      status: "captured",
+    },
+  },
+  {
+    upsert: true,
+    returnDocument: "after",
+    setDefaultsOnInsert: true,
+  }
+);
+
+        if (payment.method !== "cash") {
+          throw new Error(
+            "Existing payment record is not a COD payment"
+          );
+        }
+      } catch (err) {
+        // Another request may have created the payment concurrently.
+        if (err.code !== 11000) {
+          throw err;
+        }
+
+        payment = await Payment.findOne({ order: order._id });
+
+        if (!payment || payment.method !== "cash") {
+          throw err;
+        }
       }
     }
   }
@@ -78,31 +134,51 @@ export const syncCodOrderPayment = async (order) => {
     order.payment.status !== "partially_refunded" &&
     order.payment.status !== "refunded"
   ) {
-    order.payment.status = allPaid ? "paid" : allFailed ? "failed" : "pending";
+    order.payment.status = allPaid
+      ? "paid"
+      : allFailed
+        ? "failed"
+        : "pending";
   }
 };
 
+
+
 export const syncOrderRefundPaymentStatus = async (order) => {
   const paidStatuses = ["paid", "partially_refunded", "refunded"];
+
   const paidItems = order.items.filter((item) =>
     paidStatuses.includes(item.paymentStatus)
   );
+
+  // Original amount of all items that were paid or refunded.
   const paidAmount = paidItems.reduce(
     (sum, item) => sum + item.price * item.quantity,
     0
   );
 
-  if (paidAmount <= 0) return;
-
   const refunds = await ReturnRequest.aggregate([
-    { $match: { order: order._id, status: "refunded" } },
-    { $group: { _id: null, amount: { $sum: "$refundAmount" } } },
+    {
+      $match: {
+        order: order._id,
+        status: "refunded",
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        amount: { $sum: "$refundAmount" },
+      },
+    },
   ]);
+
   const refundedAmount = Number(refunds[0]?.amount || 0);
 
-  if (refundedAmount > 0) {
+  if (refundedAmount > 0 && paidAmount > 0) {
     order.payment.status =
-      refundedAmount >= paidAmount ? "refunded" : "partially_refunded";
+      refundedAmount >= paidAmount
+        ? "refunded"
+        : "partially_refunded";
   }
 };
 // ==========================================
@@ -354,9 +430,10 @@ export const createUserOrder = async (req, res) => {
 // ==========================================
 // VENDOR: my orders
 // ==========================================
+
 export const getVendorOrders = async (req, res) => {
   try {
-    const vendorId = req.user._id;
+    const vendorId = req.user?._id;
 
     if (!vendorId) {
       return res.status(401).json({
@@ -365,8 +442,7 @@ export const getVendorOrders = async (req, res) => {
       });
     }
 
-    // Orders that contain at least one item belonging to this vendor
-    // (and are really placed: COD, or online and paid)
+    // 1. Get orders containing this vendor's items.
     const orders = await Order.find({
       "items.vendor": vendorId,
       ...PLACED_ORDER_FILTER,
@@ -374,21 +450,69 @@ export const getVendorOrders = async (req, res) => {
       .populate("user", "name email phone")
       .sort({ createdAt: -1 });
 
+    // 2. Handle the case where no orders exist.
     if (orders.length === 0) {
-      return res.status(404).json({
-        success: false,
+      return res.status(200).json({
+        success: true,
         message: "No orders found",
+        data: [],
       });
     }
 
-    // Only return this vendor's items
-    const vendorOrders = orders.map((order) => {
-      const vendorItems = order.items.filter(
-        (item) => item.vendor.toString() === vendorId.toString()
-      );
+    // 3. Fetch return requests for these orders.
+    const orderIds = orders.map((order) => order._id);
 
+    const returnRequests = await ReturnRequest.find({
+      order: { $in: orderIds },
+    })
+      .select(
+        "order item requestedQuantity refundAmount status refundProcessedAt createdAt"
+      )
+      .lean();
+
+    // 4. Map each return request to its order and item.
+    const requestsByOrderAndItem = new Map(
+      returnRequests.map((request) => [
+        `${request.order}:${request.item}`,
+        request,
+      ])
+    );
+
+    // 5. Return only this vendor's items.
+    const vendorOrders = orders.map((order) => {
+      const vendorItems = order.items
+        .filter(
+          (item) =>
+            String(item.vendor) === String(vendorId)
+        )
+        .map((item) => {
+          const returnRequest = requestsByOrderAndItem.get(
+            `${order._id}:${item._id}`
+          );
+
+          return {
+            ...item.toObject(),
+
+            // Attach return information if a request exists.
+            returnRequest: returnRequest
+              ? {
+                  _id: returnRequest._id,
+                  requestedQuantity:
+                    returnRequest.requestedQuantity,
+                  refundAmount: returnRequest.refundAmount,
+                  status: returnRequest.status,
+                  refundProcessedAt:
+                    returnRequest.refundProcessedAt,
+                  createdAt: returnRequest.createdAt,
+                }
+              : null,
+          };
+        });
+
+      // 6. Calculate this vendor's subtotal.
       const vendorTotal = vendorItems.reduce(
-        (total, item) => total + item.price * item.quantity,
+        (total, item) =>
+          total + item.price * item.quantity,
         0
       );
 
@@ -405,19 +529,22 @@ export const getVendorOrders = async (req, res) => {
       };
     });
 
+    // 7. Send the response — this was missing in your code.
     return res.status(200).json({
       success: true,
+      message: "Vendor orders fetched successfully",
       data: vendorOrders,
     });
   } catch (err) {
-    console.error(err);
+    console.error("Error fetching vendor orders:", err);
 
     return res.status(500).json({
       success: false,
-      message: err.message,
+      message: "Failed to fetch vendor orders",
     });
   }
 };
+
 
 // ==========================================
 // VENDOR: update one item's delivery status
@@ -460,12 +587,21 @@ export const updateVendorOrderItemStatus = async (req, res) => {
     }
 
     // An unpaid online checkout is not a real order yet
-    if (order.payment.method === "online" && order.payment.status !== "paid") {
-      return res.status(400).json({
-        success: false,
-        message: "This order has not been paid yet",
-      });
-    }
+    const allowedOnlinePaymentStatuses = [
+  "paid",
+  "partially_refunded",
+  "refunded",
+];
+
+if (
+  order.payment.method === "online" &&
+  !allowedOnlinePaymentStatuses.includes(order.payment.status)
+) {
+  return res.status(400).json({
+    success: false,
+    message: "This order has not been paid yet",
+  });
+}
 
     const item = order.items.id(itemId);
 
