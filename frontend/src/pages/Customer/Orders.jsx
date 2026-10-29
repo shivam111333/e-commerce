@@ -14,6 +14,19 @@ import api from "../../api/axios.jsx";
 const REFUND_TIME_NOTE =
   "It usually takes 5–7 business days to show in your account once processed.";
 
+// Customers can cancel an item only this long after placing the order,
+// and only while it has not been shipped. Keep in sync with the backend.
+const CANCEL_WINDOW_HOURS = 24;
+const CANCELLABLE_STATUSES = ["pending", "confirmed"];
+
+const CANCEL_REASONS = [
+  "Ordered by mistake",
+  "Found a better price",
+  "Delivery is taking too long",
+  "Want to change size / colour",
+  "Other",
+];
+
 function Orders() {
   const navigate = useNavigate();
 
@@ -22,6 +35,11 @@ function Orders() {
   const [orders, setOrders] = useState([]);
   const [returnRequests, setReturnRequests] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Cancel dialog
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelling, setCancelling] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -55,6 +73,89 @@ function Orders() {
 
     fetchOrders();
   }, [isAuthenticated, navigate]);
+
+  // Can the customer still cancel this item? Also returns the time left.
+  const getCancelInfo = (order, item) => {
+    const placedAt = new Date(order.createdAt).getTime();
+    const msLeft = placedAt + CANCEL_WINDOW_HOURS * 60 * 60 * 1000 - Date.now();
+
+    const statusOk = CANCELLABLE_STATUSES.includes(item.status);
+    const paymentOk =
+      order.payment?.method === "cod" ||
+      ["paid", "partially_refunded"].includes(order.payment?.status);
+
+    const hours = Math.floor(msLeft / (60 * 60 * 1000));
+    const minutes = Math.floor((msLeft % (60 * 60 * 1000)) / (60 * 1000));
+
+    return {
+      canCancel: Number.isFinite(placedAt) && statusOk && paymentOk && msLeft > 0,
+      timeLeft: hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`,
+    };
+  };
+
+  const openCancel = (order, item, paidOnline) => {
+    setCancelReason("");
+    setCancelTarget({
+      orderId: order._id,
+      itemId: item._id,
+      name: item.name,
+      paidOnline,
+      amount: Number(item.price) * Number(item.quantity),
+    });
+  };
+
+  const closeCancel = () => {
+    setCancelTarget(null);
+    setCancelReason("");
+  };
+
+  const confirmCancel = async () => {
+    if (!cancelTarget || cancelling) return;
+
+    if (!cancelReason) {
+      toast.error("Please select a reason");
+      return;
+    }
+
+    try {
+      setCancelling(true);
+
+      const response = await api.patch(
+        `/order/${cancelTarget.orderId}/item/${cancelTarget.itemId}/cancel`,
+        { cancellationReason: cancelReason }
+      );
+
+      toast.success(response.data?.message || "Item cancelled");
+
+      // Update only the cancelled item on screen
+      setOrders((current) =>
+        current.map((order) =>
+          order._id === cancelTarget.orderId
+            ? {
+                ...order,
+                items: order.items.map((item) =>
+                  item._id === cancelTarget.itemId
+                    ? {
+                        ...item,
+                        status: "cancelled",
+                        paymentStatus: "cancelled",
+                        cancellationReason: cancelReason,
+                        cancelledAt: new Date().toISOString(),
+                      }
+                    : item
+                ),
+              }
+            : order
+        )
+      );
+
+      closeCancel();
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to cancel item");
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   const formatDate = (date) => {
     return new Date(date).toLocaleDateString("en-IN", {
@@ -275,6 +376,7 @@ function Orders() {
                       const refundDone = item.paymentStatus === "refunded";
                       const cancelRefundAmount =
                         Number(item.price) * Number(item.quantity);
+                      const cancelInfo = getCancelInfo(order, item);
 
                       return (
                       <div
@@ -370,6 +472,27 @@ function Orders() {
                               >
                                 Request return
                               </button>
+                            )}
+
+                            {cancelInfo.canCancel && (
+                              <div className="mt-3">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    openCancel(
+                                      order,
+                                      item,
+                                      order.payment?.method === "online"
+                                    )
+                                  }
+                                  className="rounded-lg border border-red-500 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
+                                >
+                                  Cancel item
+                                </button>
+                                <p className="mt-1 text-xs text-gray-500">
+                                  Free cancellation: {cancelInfo.timeLeft} left
+                                </p>
+                              </div>
                             )}
 
                             {isCancelled && (
@@ -514,6 +637,74 @@ function Orders() {
           </div>
         )}
       </div>
+
+      {/* Cancel dialog */}
+      {cancelTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => !cancelling && closeCancel()}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold text-gray-800">
+              Cancel this item?
+            </h3>
+            <p className="mt-1 text-sm text-gray-600">{cancelTarget.name}</p>
+
+            {cancelTarget.paidOnline && (
+              <p className="mt-3 rounded-lg bg-blue-50 p-3 text-sm text-blue-900">
+                You paid online, so ₹
+                {cancelTarget.amount.toLocaleString("en-IN")} will be refunded
+                to your original payment method. {REFUND_TIME_NOTE}
+              </p>
+            )}
+
+            <label
+              htmlFor="cancel-reason"
+              className="mt-4 block text-sm font-medium text-gray-700"
+            >
+              Reason for cancelling
+            </label>
+            <select
+              id="cancel-reason"
+              value={cancelReason}
+              disabled={cancelling}
+              onChange={(event) => setCancelReason(event.target.value)}
+              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+            >
+              <option value="">Select a reason</option>
+              {CANCEL_REASONS.map((reason) => (
+                <option key={reason} value={reason}>
+                  {reason}
+                </option>
+              ))}
+            </select>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={cancelling}
+                onClick={closeCancel}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Keep item
+              </button>
+              <button
+                type="button"
+                disabled={cancelling || !cancelReason}
+                onClick={confirmCancel}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {cancelling ? "Cancelling..." : "Yes, cancel item"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

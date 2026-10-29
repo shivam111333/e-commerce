@@ -16,10 +16,12 @@ import {
   createProduct,
   updateProduct,
   deleteProduct,
+  getAllProduct
 } from "../controllers/productController.js";
 
 // Public
 router.get("/", getProduct);
+router.get('/all',getAllProduct)
 router.get("/top-selling", getTopSellingProducts);
 router.get("/:id", validate(idParamSchema(), "params"), getProductById);
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import api from "../../api/axios";
 import ProductCard from "../../component/ProductCard";
@@ -6,22 +6,13 @@ import { FaFilter, FaSlidersH } from "react-icons/fa";
 
 const PRODUCTS_PER_PAGE = 12;
 
-// Builds the page list for the pagination bar, e.g. [1, "...", 4, 5, 6, "...", 12]
-const getPageNumbers = (currentPage, totalPages) => {
-  const pages = [];
-
-  for (let page = 1; page <= totalPages; page += 1) {
-    const isEdge = page === 1 || page === totalPages;
-    const isNearCurrent = Math.abs(page - currentPage) <= 1;
-
-    if (isEdge || isNearCurrent) {
-      pages.push(page);
-    } else if (pages[pages.length - 1] !== "...") {
-      pages.push("...");
-    }
-  }
-
-  return pages;
+const EMPTY_PAGINATION = {
+  currentPage: 1,
+  limit: PRODUCTS_PER_PAGE,
+  totalProducts: 0,
+  totalPages: 0,
+  hasNextPage: false,
+  hasPrevPage: false,
 };
 
 function Products() {
@@ -33,76 +24,163 @@ function Products() {
 
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
+
   const [subcategoryOptions, setSubcategoryOptions] = useState({
     categoryId: null,
     data: [],
   });
 
   const [sortOrder, setSortOrder] = useState("featured");
-  const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [retryCount, setRetryCount] = useState(0);
 
-  // Fetch all products
+  const [pagination, setPagination] = useState(EMPTY_PAGINATION);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  // Reset pagination when search, filters, or sorting change.
   useEffect(() => {
+    setCurrentPage(1);
+  }, [search, selectedCategory, selectedSubcategory, sortOrder]);
+
+  // Fetch products using backend pagination.
+  useEffect(() => {
+    let isCurrentRequest = true;
+
     const fetchProducts = async () => {
       try {
         setLoading(true);
+        setError("");
 
-        const response = await api.get("/product");
-        const productData = response.data?.data || [];
+       // replace with this:
+const response = await api.get("/product", {
+  params: {
+    page: currentPage,
+    limit: PRODUCTS_PER_PAGE,
+    search: search.trim(),
+    category: selectedCategory === "all" ? undefined : selectedCategory,
+    subcategory:
+      selectedCategory === "all" ? undefined : selectedSubcategory || undefined,
+    sort: sortOrder,
+  },
+});
 
-        setProducts(productData);
-      } catch (error) {
-        console.error("Error fetching products:", error);
+        if (!isCurrentRequest) return;
+
+        const fetchedProducts = response.data?.data || [];
+        const fetchedPagination = response.data?.pagination || {
+          ...EMPTY_PAGINATION,
+          currentPage,
+        };
+
+        setProducts(fetchedProducts);
+        setPagination(fetchedPagination);
+
+        // Handle a page that no longer exists after filtering/deletion.
+        if (
+          fetchedPagination.totalPages > 0 &&
+          currentPage > fetchedPagination.totalPages
+        ) {
+          setCurrentPage(fetchedPagination.totalPages);
+        }
+      } catch (err) {
+        if (!isCurrentRequest) return;
+
+        console.error("Product loading error:", err);
+
+        setError(
+          err.response?.data?.message || "Failed to load products."
+        );
+
+        setProducts([]);
+        setPagination({
+          ...EMPTY_PAGINATION,
+          currentPage,
+        });
       } finally {
-        setLoading(false);
+        if (isCurrentRequest) {
+          setLoading(false);
+        }
       }
     };
 
     fetchProducts();
-  }, []);
 
-  // Fetch categories
+    return () => {
+      isCurrentRequest = false;
+    };
+  }, [
+    currentPage,
+    selectedCategory,
+    selectedSubcategory,
+    search,
+    sortOrder,
+    retryCount,
+  ]);
+
+  // Fetch categories.
   useEffect(() => {
-    api
-      .get("/category")
-      .then((response) => {
-        setCategories(response.data?.data || []);
-      })
-      .catch((error) => {
-        console.error("Error fetching categories:", error);
-      });
+    let isCurrentRequest = true;
+
+    const fetchCategories = async () => {
+      try {
+        const response = await api.get("/category");
+
+        if (isCurrentRequest) {
+          setCategories(response.data?.data || []);
+        }
+      } catch (err) {
+        console.error("Error fetching categories:", err);
+      }
+    };
+
+    fetchCategories();
+
+    return () => {
+      isCurrentRequest = false;
+    };
   }, []);
 
-  // Fetch subcategories for the selected category
+  // Fetch subcategories for the selected category.
   useEffect(() => {
     let isCurrentRequest = true;
 
     if (selectedCategory === "all") {
+      setSubcategoryOptions({
+        categoryId: null,
+        data: [],
+      });
+
       return () => {
         isCurrentRequest = false;
       };
     }
 
-    api
-      .get(`/subcategory/category/${selectedCategory}`)
-      .then((response) => {
+    const fetchSubcategories = async () => {
+      try {
+        const response = await api.get(
+          `/subcategory/category/${selectedCategory}`
+        );
+
         if (isCurrentRequest) {
           setSubcategoryOptions({
             categoryId: selectedCategory,
             data: response.data?.data || [],
           });
         }
-      })
-      .catch((error) => {
+      } catch (err) {
         if (isCurrentRequest) {
-          console.error("Error fetching subcategories:", error);
+          console.error("Error fetching subcategories:", err);
+
           setSubcategoryOptions({
             categoryId: selectedCategory,
             data: [],
           });
         }
-      });
+      }
+    };
+
+    fetchSubcategories();
 
     return () => {
       isCurrentRequest = false;
@@ -114,71 +192,46 @@ function Products() {
       ? subcategoryOptions.data
       : [];
 
-  // Filter and sort products
-  const filteredProducts = products
-    .filter((product) =>
-      product.name?.toLowerCase().includes(search.toLowerCase())
-    )
-    .filter((product) => {
-      if (selectedCategory === "all") return true;
+  // Pagination information returned by the backend.
+  const totalProducts = Number(pagination.totalProducts) || 0;
+  const totalPages = Number(pagination.totalPages) || 0;
 
-      const categoryId =
-        typeof product.category === "string"
-          ? product.category
-          : product.category?._id;
+  // const startIndex =
+  //   totalProducts === 0
+  //     ? 0
+  //     : (currentPage - 1) * PRODUCTS_PER_PAGE + 1;
 
-      return categoryId === selectedCategory;
-    })
-    .filter((product) => {
-      if (!selectedSubcategory || selectedCategory === "all") {
-        return true;
-      }
+  // const endIndex =
+  //   totalProducts === 0
+  //     ? 0
+  //     : Math.min(
+  //         (currentPage - 1) * PRODUCTS_PER_PAGE + products.length,
+  //         totalProducts
+  //       );
 
-      const subcategoryId =
-        typeof product.subcategory === "string"
-          ? product.subcategory
-          : product.subcategory?._id;
+  // Navigate between pages.
+  const goToPage = (requestedPage) => {
+    const safePage = Math.min(
+      Math.max(1, requestedPage),
+      Math.max(1, totalPages)
+    );
 
-      return subcategoryId === selectedSubcategory;
-    })
-    .sort((first, second) => {
-      const firstPrice = Number(first.variants?.[0]?.price || 0);
-      const secondPrice = Number(second.variants?.[0]?.price || 0);
+    if (safePage === currentPage) return;
 
-      if (sortOrder === "price-low") {
-        return firstPrice - secondPrice;
-      }
-
-      if (sortOrder === "price-high") {
-        return secondPrice - firstPrice;
-      }
-
-      return 0;
-    });
-
-  // Reset to page 1 when search, filters, or sorting changes
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [search, selectedCategory, selectedSubcategory, sortOrder]);
-
-  // Pagination calculations
-  const totalPages = Math.ceil(filteredProducts.length / PRODUCTS_PER_PAGE);
-
-  const startIndex = (currentPage - 1) * PRODUCTS_PER_PAGE;
-
-  const paginatedProducts = filteredProducts.slice(
-    startIndex,
-    startIndex + PRODUCTS_PER_PAGE
-  );
-
-  // Change page and jump back to the top, like a normal shopping site
-  const goToPage = (page) => {
-    const safePage = Math.min(Math.max(1, page), totalPages);
     setCurrentPage(safePage);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth",
+    });
   };
 
-  // Update category in URL
+  // Retry a failed request.
+  const retryFetch = useCallback(() => {
+    setRetryCount((count) => count + 1);
+  }, []);
+
+  // Update category in the URL.
   const selectCategory = (categoryId) => {
     const nextSearchParams = new URLSearchParams(searchParams);
 
@@ -191,9 +244,10 @@ function Products() {
     }
 
     setSearchParams(nextSearchParams);
+    setCurrentPage(1);
   };
 
-  // Update subcategory in URL
+  // Update subcategory in the URL.
   const selectSubcategory = (subcategoryId) => {
     const nextSearchParams = new URLSearchParams(searchParams);
 
@@ -204,33 +258,61 @@ function Products() {
     }
 
     setSearchParams(nextSearchParams);
+    setCurrentPage(1);
   };
+
+  // Clear category filters and restore default sorting.
+  const clearFilters = () => {
+    const nextSearchParams = new URLSearchParams(searchParams);
+
+    nextSearchParams.delete("category");
+    nextSearchParams.delete("subcategory");
+    nextSearchParams.delete("search");  
+
+    setSearchParams(nextSearchParams);
+    setSortOrder("featured");
+    setCurrentPage(1);
+  };
+  // Remove only the search, keep category and subcategory
+const clearSearch = () => {
+  const nextSearchParams = new URLSearchParams(searchParams);
+  nextSearchParams.delete("search");
+
+  setSearchParams(nextSearchParams);
+  setCurrentPage(1);
+};
 
   return (
     <main className="min-h-screen bg-slate-50">
       <div className="mx-auto max-w-7xl px-4 py-7 sm:px-6 lg:px-8">
         <div className="grid items-start gap-5 lg:grid-cols-[230px_minmax(0,1fr)]">
-          {/* Left sidebar: filters + sorting. Stays in view while the
-              product list scrolls on large screens. */}
+
+          {/* Filter sidebar */}
           <aside className="rounded-2xl border border-slate-200 bg-white p-5 lg:sticky lg:top-24">
             <h2 className="mb-4 flex items-center gap-2 font-semibold text-slate-900">
               <FaFilter className="text-blue-600" />
               Filters
             </h2>
 
-            {/* Sort by */}
+            {/* Sorting */}
             <label
               htmlFor="product-sort"
               className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-700"
             >
-              <FaSlidersH aria-hidden="true" className="text-slate-500" />
+              <FaSlidersH
+                aria-hidden="true"
+                className="text-slate-500"
+              />
               Sort by
             </label>
 
             <select
               id="product-sort"
               value={sortOrder}
-              onChange={(event) => setSortOrder(event.target.value)}
+              onChange={(event) => {
+                setSortOrder(event.target.value);
+                setCurrentPage(1);
+              }}
               className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
             >
               <option value="featured">Featured</option>
@@ -271,8 +353,12 @@ function Products() {
 
             <select
               id="product-subcategory"
-              value={selectedCategory === "all" ? "" : selectedSubcategory}
-              onChange={(event) => selectSubcategory(event.target.value)}
+              value={
+                selectedCategory === "all" ? "" : selectedSubcategory
+              }
+              onChange={(event) =>
+                selectSubcategory(event.target.value)
+              }
               disabled={selectedCategory === "all"}
               className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
             >
@@ -291,120 +377,111 @@ function Products() {
 
             <button
               type="button"
-              onClick={() => {
-                selectCategory("all");
-                setSortOrder("featured");
-              }}
+              onClick={clearFilters}
               className="mt-4 text-sm font-semibold text-blue-700 hover:text-blue-900"
             >
               Clear filters
             </button>
           </aside>
 
-          {/* Products: a normal page. The whole page scrolls, and the
-              pagination sits at the very end of the list. */}
+          {/* Product listing */}
           <section className="min-w-0">
-            {/* Result count */}
-            <div className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
-              <p className="text-sm text-slate-600">
-                Showing{" "}
-                <span className="font-semibold text-slate-900">
-                  {filteredProducts.length === 0 ? 0 : startIndex + 1}
-                </span>{" "}
-                to{" "}
-                <span className="font-semibold text-slate-900">
-                  {Math.min(
-                    startIndex + PRODUCTS_PER_PAGE,
-                    filteredProducts.length
-                  )}
-                </span>{" "}
-                of{" "}
-                <span className="font-semibold text-slate-900">
-                  {filteredProducts.length}
-                </span>{" "}
-                products
-              </p>
-            </div>
 
-            {loading ? (
-              <div className="flex min-h-[40vh] items-center justify-center rounded-2xl bg-white text-slate-500">
-                Loading products...
-              </div>
-            ) : filteredProducts.length === 0 ? (
-              <div className="flex min-h-[40vh] items-center justify-center rounded-2xl bg-white px-4 text-center text-slate-500">
-                No products found. Try another search or category.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {paginatedProducts.map((product) => (
-                  <ProductCard key={product._id} product={product} />
-                ))}
+            {/* Active search */}
+            {search && (
+              <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-2.5 text-sm text-blue-900">
+                <span>
+                  Showing results for <b>“{search}”</b>
+                </span>
+
+                <button
+                  type="button"
+                  onClick={clearSearch}
+                  className="ml-auto font-semibold text-blue-700 underline hover:text-blue-900"
+                >
+                  Clear search
+                </button>
               </div>
             )}
 
-            {/* Pagination: appears after the last product */}
-            {!loading && filteredProducts.length > 0 && totalPages > 1 && (
-              <nav
-                aria-label="Product pages"
-                className="mt-8 flex flex-col items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 sm:flex-row"
+            {/* Loading state */}
+            {loading ? (
+              <div
+                role="status"
+                className="flex min-h-[40vh] items-center justify-center rounded-2xl bg-white text-slate-500"
               >
-                <p className="text-sm text-slate-600">
-                  Page{" "}
-                  <span className="font-semibold text-slate-900">
-                    {currentPage}
-                  </span>{" "}
-                  of{" "}
-                  <span className="font-semibold text-slate-900">
-                    {totalPages}
-                  </span>
-                </p>
+                Loading products...
+              </div>
+            ) : error ? (
+              /* Error state */
+              <div
+                role="alert"
+                className="flex min-h-[30vh] flex-col items-center justify-center gap-3 rounded-2xl bg-white px-4 text-center"
+              >
+                <p className="text-red-600">{error}</p>
 
-                <div className="flex flex-wrap items-center justify-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => goToPage(currentPage - 1)}
-                    disabled={currentPage === 1}
-                    className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    Previous
-                  </button>
-
-                  {getPageNumbers(currentPage, totalPages).map((page, index) =>
-                    page === "..." ? (
-                      <span
-                        key={`gap-${index}`}
-                        className="px-1 text-slate-400"
-                        aria-hidden="true"
-                      >
-                        …
-                      </span>
-                    ) : (
-                      <button
-                        key={page}
-                        type="button"
-                        onClick={() => goToPage(page)}
-                        aria-current={currentPage === page ? "page" : undefined}
-                        className={`min-w-10 rounded-lg border px-3 py-2 text-sm font-semibold transition ${
-                          currentPage === page
-                            ? "border-blue-600 bg-blue-600 text-white"
-                            : "border-slate-200 text-slate-700 hover:bg-slate-100"
-                        }`}
-                      >
-                        {page}
-                      </button>
-                    )
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => goToPage(currentPage + 1)}
-                    disabled={currentPage === totalPages}
-                    className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    Next
-                  </button>
+                <button
+                  type="button"
+                  onClick={retryFetch}
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                >
+                  Try again
+                </button>
+              </div>
+            ) : products.length === 0 ? (
+              /* Empty state */
+              <div className="flex min-h-[40vh] items-center justify-center rounded-2xl bg-white px-4 text-center text-slate-500">
+              No products found{search ? ` for “${search}”` : ""}. Try another search or category
+              </div>
+            ) : (
+              <>
+                {/* Maximum 12 products per page */}
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {products.map((product) => (
+                    <ProductCard
+                      key={product._id}
+                      product={product}
+                    />
+                  ))}
                 </div>
-              </nav>
+
+                {/* Previous / Next buttons at the bottom */}
+                {totalProducts > 0 && (
+                  <nav
+                    aria-label="Product pagination"
+                    className="mt-8 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-4"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => goToPage(currentPage - 1)}
+                      disabled={currentPage <= 1 || loading}
+                      className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 sm:px-5"
+                    >
+                      Previous
+                    </button>
+
+                    <span className="text-center text-sm text-slate-600">
+                      Page{" "}
+                      <span className="font-semibold text-slate-900">
+                        {currentPage}
+                      </span>{" "}
+                      of{" "}
+                      <span className="font-semibold text-slate-900">
+                        {totalPages}
+                      </span>
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => goToPage(currentPage + 1)}
+                      disabled={currentPage >= totalPages || loading}
+                      className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40 sm:px-5"
+                    >
+                      Next
+                    </button>
+                  </nav>
+                )}
+              </>
             )}
           </section>
         </div>

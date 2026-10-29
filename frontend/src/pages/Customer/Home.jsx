@@ -50,7 +50,7 @@ function Home() {
 
         const [productResponse, salesResponse] = await Promise.all([
           selectedCategory === "all"
-            ? api.get("/product/")
+            ? api.get("/product/all")
             : api.get(`/category/all/${selectedCategory}`),
           api.get("/product/top-selling"),
         ]);

@@ -24,6 +24,7 @@ function Navbar() {
   const [categories, setCategories] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const cartCount = cartItems.length;
+  const searchInUrl = new URLSearchParams(location.search).get("search") || "";
   const categoryInUrl = new URLSearchParams(location.search).get("category");
   const activeCategory =
     location.pathname === "/" || location.pathname === "/products"
@@ -43,15 +44,47 @@ function Navbar() {
     fetchCategories();
   }, []);
 
+  // Keep the search box in sync with the address
+// (for example when the search is cleared from the Products page)
+useEffect(() => {
+  setSearchQuery(searchInUrl);
+}, [searchInUrl]);
+
+// Removes the search from the address while staying on the Products page
+const clearSearchFromUrl = () => {
+  const nextParams = new URLSearchParams(location.search);
+  nextParams.delete("search");
+
+  const queryString = nextParams.toString();
+  navigate(queryString ? `/products?${queryString}` : "/products", {
+    replace: true,
+  });
+};
+
+const handleSearchChange = (e) => {
+  const value = e.target.value;
+  setSearchQuery(value);
+
+  // Emptying the box also removes the old search from the address
+  if (value.trim() === "" && location.pathname === "/products" && searchInUrl) {
+    clearSearchFromUrl();
+  }
+};
+
   const handleSearchSubmit = (e) => {
-    e.preventDefault();
+  e.preventDefault();
 
-    const query = searchQuery.trim();
+  const query = searchQuery.trim();
 
-    if (!query) return;
+  if (!query) {
+    if (location.pathname === "/products" && searchInUrl) {
+      clearSearchFromUrl();
+    }
+    return;
+  }
 
-    navigate(`/products?search=${encodeURIComponent(query)}`);
-  };
+  navigate(`/products?search=${encodeURIComponent(query)}`);
+};
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -87,7 +120,7 @@ function Navbar() {
                 type="text"
                 placeholder="Search products..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={handleSearchChange}
                 className="
                   w-full
                   h-11
@@ -322,7 +355,7 @@ function Navbar() {
               type="text"
               placeholder="Search products..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+             onChange={handleSearchChange}
               className="
                 w-full
                 h-10

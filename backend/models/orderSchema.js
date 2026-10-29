@@ -85,6 +85,11 @@ const orderItemSchema = new mongoose.Schema(
     cancelledAt: {
       type: Date,
     },
+
+    cancelledBy: {
+  type: String,
+  enum: ["customer", "vendor", "admin"],
+},
   },
   {
     _id: true,

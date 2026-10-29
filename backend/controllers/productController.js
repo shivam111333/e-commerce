@@ -1,13 +1,238 @@
 import Product from "../models/productSchema.js";
 import Variant from "../models/variantSchema.js";
 import Order from "../models/orderSchema.js";
-// import Category from '../models/categorySchema.js'
+ import Category from '../models/categorySchema.js'
 import Subcategory from '../models/subcategorySchema.js'
 import User from '../models/userSchema.js'
 
 
+import mongoose from "mongoose";
 
 export const getProduct = async (req, res) => {
+  try {
+    // 1. Read pagination, search, filters, and sorting parameters.
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+
+    // Keep the page size fixed at 12.
+    const limit = 12;
+
+    const skip = (page - 1) * limit;
+
+    const search = (req.query.search || "").trim();
+    const category = req.query.category;
+    const subcategory = req.query.subcategory;
+    const sort = req.query.sort || "featured";
+
+    // 2. Find active vendors.
+    const activeVendors = await User.find(
+      { role: "vendor", status: "active" },
+      "_id"
+    ).lean();
+
+    const activeVendorIds = activeVendors.map((vendor) => vendor._id);
+
+    // Return an empty result instead of a 404.
+    if (activeVendorIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: [],
+        pagination: {
+          currentPage: page,
+          limit,
+          totalProducts: 0,
+          totalPages: 0,
+          hasNextPage: false,
+          hasPrevPage: false,
+        },
+      });
+    }
+
+    // 3. Build the product filters.
+    const matchConditions = {
+      vendor: { $in: activeVendorIds },
+    };
+
+    // Validate and filter by category
+    if (category) {
+      if (!mongoose.isValidObjectId(category)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid category ID",
+        });
+      }
+
+      matchConditions.category = new mongoose.Types.ObjectId(category);
+    }
+
+    // Validate and filter by subcategory
+    if (subcategory) {
+      if (!mongoose.isValidObjectId(subcategory)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid subcategory ID",
+        });
+      }
+
+      matchConditions.subcategory = new mongoose.Types.ObjectId(
+        subcategory
+      );
+    }
+
+    // 4. Search: product title, category name, or subcategory name only.
+    // The description is NOT searched.
+    // The match must start at the beginning of a word, so "ram" finds
+    // "RAM" but not "grams" or "program".
+    let searchStages = [];
+
+    if (search) {
+      const escapedSearch = search.replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&"
+      );
+
+      const wordStart = `\\b${escapedSearch}`;
+
+      searchStages = [
+        {
+          $lookup: {
+            from: Category.collection.name,
+            localField: "category",
+            foreignField: "_id",
+            as: "categoryDoc",
+          },
+        },
+        {
+          $lookup: {
+            from: Subcategory.collection.name,
+            localField: "subcategory",
+            foreignField: "_id",
+            as: "subcategoryDoc",
+          },
+        },
+        {
+          $match: {
+            $or: [
+              { name: { $regex: wordStart, $options: "i" } },
+              { "categoryDoc.name": { $regex: wordStart, $options: "i" } },
+              { "subcategoryDoc.name": { $regex: wordStart, $options: "i" } },
+            ],
+          },
+        },
+      ];
+    }
+
+    // 5. Apply sorting.
+    // Price sorting uses the lowest in-stock variant price.
+    let sortStage;
+
+    switch (sort) {
+      case "price-low":
+        sortStage = { minPrice: 1, _id: 1 };
+        break;
+
+      case "price-high":
+        sortStage = { minPrice: -1, _id: 1 };
+        break;
+
+      default:
+        sortStage = { _id: -1 };
+        break;
+    }
+
+    // 6. Fetch products and calculate pagination metadata.
+    const result = await Product.aggregate([
+      {
+        $match: matchConditions,
+      },
+      ...searchStages,
+      {
+        $lookup: {
+          from: Variant.collection.name,
+          localField: "_id",
+          foreignField: "product",
+          as: "variants",
+        },
+      },
+      {
+        $addFields: {
+          variants: {
+            $filter: {
+              input: "$variants",
+              as: "variant",
+              cond: {
+                $gt: ["$$variant.stock", 0],
+              },
+            },
+          },
+        },
+      },
+      {
+        // Only products with at least one in-stock variant.
+        $match: {
+          "variants.0": { $exists: true },
+        },
+      },
+      {
+        $addFields: {
+          minPrice: {
+            $min: "$variants.price",
+          },
+        },
+      },
+      {
+        $facet: {
+          // Count all matching products before pagination.
+          metadata: [
+            { $count: "totalProducts" },
+          ],
+
+          // Return only the products for the requested page.
+          products: [
+            { $sort: sortStage },
+            { $skip: skip },
+            { $limit: limit },
+            {
+              // Remove helper fields used only for searching and sorting
+              $project: {
+                minPrice: 0,
+                categoryDoc: 0,
+                subcategoryDoc: 0,
+              },
+            },
+          ],
+        },
+      },
+    ]);
+
+    const totalProducts = result[0].metadata[0]?.totalProducts || 0;
+    const totalPages = Math.ceil(totalProducts / limit);
+
+    const products = result[0].products;
+
+    // 7. Send products and pagination metadata.
+    return res.status(200).json({
+      success: true,
+      data: products,
+      pagination: {
+        currentPage: page,
+        limit,
+        totalProducts,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1 && totalPages > 0,
+      },
+    });
+  } catch (err) {
+    console.error("GET PRODUCTS ERROR:", err);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch products",
+    });
+  }
+};
+
+export const getAllProduct = async (req, res) => {
   try {
     // 1. Find all active vendor IDs
     const activeVendors = await User.find(

@@ -10,6 +10,7 @@ import {
   getAllOrder,
   updateOrderPaymentStatus,
   updateOrderItemPaymentStatus,
+   cancelMyOrderItem
 } from "../controllers/orderController.js";
 import {
   createReturnRequest,
@@ -27,6 +28,7 @@ import {
   updateOrderItemPaymentStatusSchema,
   orderParamsSchema,
   orderItemParamsSchema,
+   cancelOrderItemSchema,    
 } from "../validators/orderValidator.js";
 import { createReturnRequestSchema } from "../validators/returnRequestValidator.js";
 
@@ -108,6 +110,16 @@ router.patch(
   validate(orderItemParamsSchema, "params"),
   validate(updateOrderItemPaymentStatusSchema),
   updateOrderItemPaymentStatus
+);
+
+// Customer cancels an item within 24 hours of ordering
+router.patch(
+  "/:orderId/item/:itemId/cancel",
+  authentication,
+  authorization(["user"]),
+  validate(orderItemParamsSchema, "params"),
+  validate(cancelOrderItemSchema),
+  cancelMyOrderItem
 );
 
 export default router;

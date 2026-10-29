@@ -38,35 +38,28 @@ const ADMIN_COD_STATUSES = ["pending", "paid"];
  * cancelled, and then call order.save().
  */
 
-
 export const syncCodOrderPayment = async (order) => {
-  const activeItems = order.items.filter(
-    (item) => item.status !== "cancelled"
-  );
+  const activeItems = order.items.filter((item) => item.status !== "cancelled");
 
   if (activeItems.length === 0) {
     await syncOrderRefundPaymentStatus(order);
     return;
   }
 
-  const collectedStatuses = [
-    "paid",
-    "partially_refunded",
-    "refunded",
-  ];
+  const collectedStatuses = ["paid", "partially_refunded", "refunded"];
 
   const allPaid = activeItems.every((item) =>
-    collectedStatuses.includes(item.paymentStatus)
+    collectedStatuses.includes(item.paymentStatus),
   );
 
   const allFailed = activeItems.every(
-    (item) => item.paymentStatus === "failed"
+    (item) => item.paymentStatus === "failed",
   );
 
   if (allPaid) {
     const amount = activeItems.reduce(
       (sum, item) => sum + item.price * item.quantity,
-      0
+      0,
     );
 
     // First check whether a payment record already exists.
@@ -74,7 +67,7 @@ export const syncCodOrderPayment = async (order) => {
 
     if (payment && payment.method !== "cash") {
       throw new Error(
-        "Cannot create a COD payment: this order already has a non-cash payment record"
+        "Cannot create a COD payment: this order already has a non-cash payment record",
       );
     }
 
@@ -91,27 +84,25 @@ export const syncCodOrderPayment = async (order) => {
       try {
         // Upsert prevents repeated calls from creating duplicates.
         payment = await Payment.findOneAndUpdate(
-  { order: order._id },
-  {
-    $setOnInsert: {
-      user: order.user,
-      amount,
-      currency: "INR",
-      method: "cash",
-      status: "captured",
-    },
-  },
-  {
-    upsert: true,
-    returnDocument: "after",
-    setDefaultsOnInsert: true,
-  }
-);
+          { order: order._id },
+          {
+            $setOnInsert: {
+              user: order.user,
+              amount,
+              currency: "INR",
+              method: "cash",
+              status: "captured",
+            },
+          },
+          {
+            upsert: true,
+            returnDocument: "after",
+            setDefaultsOnInsert: true,
+          },
+        );
 
         if (payment.method !== "cash") {
-          throw new Error(
-            "Existing payment record is not a COD payment"
-          );
+          throw new Error("Existing payment record is not a COD payment");
         }
       } catch (err) {
         // Another request may have created the payment concurrently.
@@ -134,27 +125,21 @@ export const syncCodOrderPayment = async (order) => {
     order.payment.status !== "partially_refunded" &&
     order.payment.status !== "refunded"
   ) {
-    order.payment.status = allPaid
-      ? "paid"
-      : allFailed
-        ? "failed"
-        : "pending";
+    order.payment.status = allPaid ? "paid" : allFailed ? "failed" : "pending";
   }
 };
-
-
 
 export const syncOrderRefundPaymentStatus = async (order) => {
   const paidStatuses = ["paid", "partially_refunded", "refunded"];
 
   const paidItems = order.items.filter((item) =>
-    paidStatuses.includes(item.paymentStatus)
+    paidStatuses.includes(item.paymentStatus),
   );
 
   // Original amount of all items that were paid or refunded.
   const paidAmount = paidItems.reduce(
     (sum, item) => sum + item.price * item.quantity,
-    0
+    0,
   );
 
   const refunds = await ReturnRequest.aggregate([
@@ -176,9 +161,7 @@ export const syncOrderRefundPaymentStatus = async (order) => {
 
   if (refundedAmount > 0 && paidAmount > 0) {
     order.payment.status =
-      refundedAmount >= paidAmount
-        ? "refunded"
-        : "partially_refunded";
+      refundedAmount >= paidAmount ? "refunded" : "partially_refunded";
   }
 };
 // ==========================================
@@ -198,10 +181,10 @@ export const getOrderByUserId = async (req, res) => {
     // The customer sees ALL their own orders, including online checkouts that
     // are still unpaid or failed (the frontend labels them by payment.status).
     // Vendors and admin still use PLACED_ORDER_FILTER.
-  const orders = await Order.find({
-  user: userId,
-  "payment.status": { $ne: "cancelled" },
-}).sort({ createdAt: -1 });
+    const orders = await Order.find({
+      user: userId,
+      "payment.status": { $ne: "cancelled" },
+    }).sort({ createdAt: -1 });
 
     if (orders.length === 0) {
       return res.status(404).json({
@@ -355,7 +338,7 @@ export const createUserOrder = async (req, res) => {
       for (const r of reduced) {
         await Variant.updateOne(
           { _id: r.variant },
-          { $inc: { stock: r.quantity } }
+          { $inc: { stock: r.quantity } },
         );
       }
     };
@@ -363,7 +346,7 @@ export const createUserOrder = async (req, res) => {
     for (const item of processedItems) {
       const result = await Variant.updateOne(
         { _id: item.variant, stock: { $gte: item.quantity } },
-        { $inc: { stock: -item.quantity } }
+        { $inc: { stock: -item.quantity } },
       );
 
       if (result.modifiedCount === 0) {
@@ -406,10 +389,7 @@ export const createUserOrder = async (req, res) => {
 
     // Buy Now must not empty the cart
     if (!isBuyNow) {
-      await Cart.findOneAndUpdate(
-        { user: userId },
-        { $set: { items: [] } }
-      );
+      await Cart.findOneAndUpdate({ user: userId }, { $set: { items: [] } });
     }
 
     return res.status(201).json({
@@ -466,7 +446,7 @@ export const getVendorOrders = async (req, res) => {
       order: { $in: orderIds },
     })
       .select(
-        "order item requestedQuantity refundAmount status refundProcessedAt createdAt"
+        "order item requestedQuantity refundAmount status refundProcessedAt createdAt",
       )
       .lean();
 
@@ -475,19 +455,16 @@ export const getVendorOrders = async (req, res) => {
       returnRequests.map((request) => [
         `${request.order}:${request.item}`,
         request,
-      ])
+      ]),
     );
 
     // 5. Return only this vendor's items.
     const vendorOrders = orders.map((order) => {
       const vendorItems = order.items
-        .filter(
-          (item) =>
-            String(item.vendor) === String(vendorId)
-        )
+        .filter((item) => String(item.vendor) === String(vendorId))
         .map((item) => {
           const returnRequest = requestsByOrderAndItem.get(
-            `${order._id}:${item._id}`
+            `${order._id}:${item._id}`,
           );
 
           return {
@@ -497,12 +474,10 @@ export const getVendorOrders = async (req, res) => {
             returnRequest: returnRequest
               ? {
                   _id: returnRequest._id,
-                  requestedQuantity:
-                    returnRequest.requestedQuantity,
+                  requestedQuantity: returnRequest.requestedQuantity,
                   refundAmount: returnRequest.refundAmount,
                   status: returnRequest.status,
-                  refundProcessedAt:
-                    returnRequest.refundProcessedAt,
+                  refundProcessedAt: returnRequest.refundProcessedAt,
                   createdAt: returnRequest.createdAt,
                 }
               : null,
@@ -511,9 +486,8 @@ export const getVendorOrders = async (req, res) => {
 
       // 6. Calculate this vendor's subtotal.
       const vendorTotal = vendorItems.reduce(
-        (total, item) =>
-          total + item.price * item.quantity,
-        0
+        (total, item) => total + item.price * item.quantity,
+        0,
       );
 
       return {
@@ -535,6 +509,7 @@ export const getVendorOrders = async (req, res) => {
       message: "Vendor orders fetched successfully",
       data: vendorOrders,
     });
+    
   } catch (err) {
     console.error("Error fetching vendor orders:", err);
 
@@ -544,7 +519,6 @@ export const getVendorOrders = async (req, res) => {
     });
   }
 };
-
 
 // ==========================================
 // VENDOR: update one item's delivery status
@@ -588,20 +562,20 @@ export const updateVendorOrderItemStatus = async (req, res) => {
 
     // An unpaid online checkout is not a real order yet
     const allowedOnlinePaymentStatuses = [
-  "paid",
-  "partially_refunded",
-  "refunded",
-];
+      "paid",
+      "partially_refunded",
+      "refunded",
+    ];
 
-if (
-  order.payment.method === "online" &&
-  !allowedOnlinePaymentStatuses.includes(order.payment.status)
-) {
-  return res.status(400).json({
-    success: false,
-    message: "This order has not been paid yet",
-  });
-}
+    if (
+      order.payment.method === "online" &&
+      !allowedOnlinePaymentStatuses.includes(order.payment.status)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "This order has not been paid yet",
+      });
+    }
 
     const item = order.items.id(itemId);
 
@@ -670,18 +644,17 @@ if (
         if (!variant) {
           return res.status(404).json({
             success: false,
-            message:
-              "Variant associated with this order item was not found",
+            message: "Variant associated with this order item was not found",
           });
         }
 
         await Variant.updateOne(
           { _id: item.variant },
-          { $inc: { stock: item.quantity } }
+          { $inc: { stock: item.quantity } },
         );
 
         item.status = "cancelled";
-        item.paymentStatus = "cancelled";          // <-- add this
+        item.paymentStatus = "cancelled"; // <-- add this
 
         item.cancellationReason = cancellationReason.trim();
         item.cancelledAt = new Date();
@@ -707,7 +680,7 @@ if (
         {
           $set: { needsRefund: true },
           $inc: { refundAmount: item.price * item.quantity },
-        }
+        },
       );
     }
 
@@ -750,7 +723,7 @@ export const getAllOrder = async (req, res) => {
     const returnRequests = orderIds.length
       ? await ReturnRequest.find({ order: { $in: orderIds } })
           .select(
-            "order item requestedQuantity refundAmount status refundProcessedAt createdAt"
+            "order item requestedQuantity refundAmount status refundProcessedAt createdAt",
           )
           .lean()
       : [];
@@ -758,13 +731,13 @@ export const getAllOrder = async (req, res) => {
       returnRequests.map((request) => [
         `${request.order}:${request.item}`,
         request,
-      ])
+      ]),
     );
     const data = orders.map((orderDocument) => {
       const order = orderDocument.toObject({ flattenMaps: true });
       order.items = order.items.map((item) => {
         const returnRequest = requestsByOrderAndItem.get(
-          `${order._id}:${item._id}`
+          `${order._id}:${item._id}`,
         );
         return {
           ...item,
@@ -1023,5 +996,112 @@ export const updateOrderItemPaymentStatus = async (req, res) => {
       success: false,
       message: err.message,
     });
+  }
+};
+
+const CANCEL_WINDOW_MS = 24 * 60 * 60 * 1000;
+const CANCELLABLE_STATUSES = ["pending", "confirmed"];
+
+export const cancelMyOrderItem = async (req, res) => {
+  try {
+    const { orderId, itemId } = req.params;
+    const { cancellationReason } = req.body;
+
+    if (!cancellationReason?.trim()) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Cancellation reason is required" });
+    }
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Order not found" });
+    }
+
+    // Customers can only cancel their own orders
+    if (String(order.user) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: "Not allowed" });
+    }
+
+    // An unpaid online checkout is not a real order yet
+    if (
+      order.payment.method === "online" &&
+      !["paid", "partially_refunded"].includes(order.payment.status)
+    ) {
+      return res
+        .status(400)
+        .json({ success: false, message: "This order has not been paid yet" });
+    }
+
+    const item = order.items.id(itemId);
+    if (!item) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Order item not found" });
+    }
+
+    if (item.status === "cancelled") {
+      return res
+        .status(400)
+        .json({ success: false, message: "Item is already cancelled" });
+    }
+
+    if (!CANCELLABLE_STATUSES.includes(item.status)) {
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "This item can't be cancelled once it has shipped",
+        });
+    }
+
+    if (Date.now() - order.createdAt.getTime() > CANCEL_WINDOW_MS) {
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "The 24-hour cancellation window has ended",
+        });
+    }
+
+    item.status = "cancelled";
+    item.paymentStatus = "cancelled";
+    item.cancellationReason = cancellationReason.trim();
+    item.cancelledAt = new Date();
+    item.cancelledBy = "customer";
+
+    if (order.payment.method === "cod") {
+      await syncCodOrderPayment(order);
+    }
+
+    await order.save();
+
+    // Restore stock after the order is saved
+    await Variant.updateOne(
+      { _id: item.variant },
+      { $inc: { stock: item.quantity } },
+    );
+
+    // Paid online: the customer must be refunded for this item
+    if (order.payment.method === "online") {
+      await Payment.updateOne(
+        { order: order._id },
+        {
+          $set: { needsRefund: true },
+          $inc: { refundAmount: item.price * item.quantity },
+        },
+      );
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Item cancelled successfully",
+      data: order,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };

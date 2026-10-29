@@ -42,7 +42,7 @@ function DashboardSection() {
       }
       const fetchProductCount=async()=>{
          try{
-               const product=await api.get('/product');
+               const product=await api.get('/product/all');
               setProductCount(product.data.data.length);
               console.log("product",product.data.data.length)
            }catch(err)

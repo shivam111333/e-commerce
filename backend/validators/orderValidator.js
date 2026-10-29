@@ -132,3 +132,16 @@ export const orderItemParamsSchema = yup.object({
   orderId: objectId("orderId"),
   itemId: objectId("itemId"),
 });
+
+
+// PATCH /api/order/:orderId/item/:itemId/cancel  (customer)
+export const cancelOrderItemSchema = yup.object({
+  cancellationReason: yup
+    .string()
+    .trim()
+    .max(
+      500,
+      "Cancellation reason must be at most 500 characters"
+    )
+    .required("Cancellation reason is required"),
+}); 

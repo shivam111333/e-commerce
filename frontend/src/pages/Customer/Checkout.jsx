@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { FaArrowLeft, FaCheck } from "react-icons/fa";
 import { toast } from "react-toastify";
@@ -10,13 +10,15 @@ import { MAX_ORDER_AMOUNT } from "../../config/limits.js";
 import { Form, Formik } from "formik";
 import FormField from "../../component/FormField.jsx";
 import { checkoutAddressSchema } from "../../validation/checkoutSchemas.js";
+import { loadRazorpay } from "../../utils/loadRazorpay.js";
+
 
 
 function Checkout() {
   const location = useLocation();
   const navigate = useNavigate();
   const dispatch = useDispatch();
-   let paymentVerificationStarted = false;
+  const paymentVerificationStarted = useRef(false);
   const { isAuthenticated } = useSelector((state) => state.auth);
 
   // ==========================================
@@ -43,7 +45,7 @@ function Checkout() {
   // ==========================================
   // FETCH CHECKOUT ITEMS
   // ==========================================
-
+ 
   useEffect(() => {
     const loadCheckoutItems = async () => {
       try {
@@ -237,7 +239,6 @@ function Checkout() {
         navigate("/orders");
         return;
       }
-
       // -----------------------------------------
       // 5. CARD / UPI
       // -----------------------------------------
@@ -274,9 +275,11 @@ function Checkout() {
         // Step 5B: Open Razorpay Checkout
         // ---------------------------------------
 
-        if (!window.Razorpay) {
+        const loaded = await loadRazorpay();
+
+        if (!loaded) {
           toast.error(
-            "Razorpay Checkout is not loaded."
+            "Unable to load Razorpay. Please check your connection and try again."
           );
           return;
         }
@@ -302,8 +305,7 @@ function Checkout() {
           handler: async function (
             paymentResponse
           ) {
-            // eslint-disable-next-line react-hooks/immutability
-            paymentVerificationStarted = true;
+            paymentVerificationStarted.current = true;
             try {
               // -----------------------------------
               // Step 5C: Verify payment
@@ -377,7 +379,7 @@ function Checkout() {
   ondismiss: async function () {
     // If the successful-payment handler has started, let its verification
     // flow finish rather than starting a competing dismissal request.
-    if (paymentVerificationStarted) {
+    if (paymentVerificationStarted.current) {
       return;
     }
 
