@@ -1,66 +1,233 @@
 import Product from "../models/productSchema.js";
 import Variant from "../models/variantSchema.js";
 import Order from "../models/orderSchema.js";
+import mongoose from "mongoose";
 // import Category from '../models/categorySchema.js'
-import Subcategory from '../models/subcategorySchema.js'
-import User from '../models/userSchema.js'
+import Subcategory from "../models/subcategorySchema.js";
+import User from "../models/userSchema.js";
 
 
+const parsePositiveInteger = (value, fallback) => {
+  if (value === undefined) return fallback;
+  if (typeof value !== "string" || !/^[1-9]\d*$/.test(value)) {
+    return null;
+  }
+  const number = Number(value);
+  return Number.isSafeInteger(number) ? number : null;
+};
+
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export const getProduct = async (req, res) => {
   try {
+    const isPaginatedRequest =
+      req.query.page !== undefined || req.query.limit !== undefined;
+    const page = parsePositiveInteger(req.query.page, 1);
+    const requestedLimit = parsePositiveInteger(req.query.limit, 12);
+
+    if (page === null || requestedLimit === null) {
+      return res.status(400).json({
+        success: false,
+        message: "page and limit must be positive integers",
+      });
+    }
+
+    const search =
+      typeof req.query.search === "string" ? req.query.search.trim() : "";
+    if (
+      (req.query.search !== undefined &&
+        typeof req.query.search !== "string") ||
+      search.length > 100
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "search must be a string of 100 characters or fewer",
+      });
+    }
+
+    const { category, subcategory } = req.query;
+    if (
+      category !== undefined &&
+      (typeof category !== "string" ||
+        (category !== "all" && !mongoose.isValidObjectId(category)))
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "category must be a valid category ID",
+      });
+    }
+    if (
+      subcategory !== undefined &&
+      (typeof subcategory !== "string" ||
+        !mongoose.isValidObjectId(subcategory))
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "subcategory must be a valid subcategory ID",
+      });
+    }
+
+    const sortOrder = req.query.sort ?? "featured";
+    const sortFields = {
+      featured: { createdAt: -1, _id: -1 },
+      "price-low": { minPrice: 1, _id: 1 },
+      "price-high": { minPrice: -1, _id: 1 },
+    };
+    if (
+      typeof sortOrder !== "string" ||
+      !Object.prototype.hasOwnProperty.call(sortFields, sortOrder)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "sort must be featured, price-low, or price-high",
+      });
+    }
+
+    const limit = Math.min(requestedLimit, 50);
+    const skip = (page - 1) * limit;
+
+    if (!Number.isSafeInteger(skip)) {
+      return res.status(400).json({
+        success: false,
+        message: "page is too large",
+      });
+    }
+
     // 1. Find all active vendor IDs
     const activeVendors = await User.find(
-      { role: "vendor", status: "active" }, 
-      "_id"
+      { role: "vendor", status: "active" },
+      "_id",
     );
-    
-    if (!activeVendors.length) {
-      return res.status(404).json({ success: false, message: "Product Not Found" });
-    }
-    
-    const activeVendorIds = activeVendors.map((vendor) => vendor._id);
 
-    // 2. Fetch products and their in-stock variants in a single database operation
-    const productsWithVariants = await Product.aggregate([
-      { 
-        // Filter products belonging to active vendors
-        $match: { vendor: { $in: activeVendorIds } } 
-      },
+    if (!activeVendors.length) {
+      if (isPaginatedRequest) {
+        return res.status(200).json({
+          success: true,
+          data: [],
+          pagination: {
+            page,
+            limit,
+            total: 0,
+            totalPages: 0,
+            hasNextPage: false,
+          },
+        });
+      }
+
+      return res.status(404).json({
+        success: false,
+        message: "Product Not Found",
+      });
+    }
+
+    const activeVendorIds = activeVendors.map((vendor) => vendor._id);
+    const productMatch = { vendor: { $in: activeVendorIds } };
+
+    if (search) {
+      productMatch.name = { $regex: escapeRegex(search), $options: "i" };
+    }
+    if (category && category !== "all") {
+      productMatch.category = new mongoose.Types.ObjectId(category);
+    }
+    if (subcategory) {
+      productMatch.subcategory = new mongoose.Types.ObjectId(subcategory);
+    }
+
+    const pipeline = [
+      { $match: productMatch },
       {
-        // Join with the variants collection
         $lookup: {
-          from: "variants", // Ensure this matches your actual MongoDB collection name for variants
+          from: "variants",
           localField: "_id",
           foreignField: "product",
-          as: "variants"
-        }
+          pipeline: [
+            { $match: { stock: { $gt: 0 } } },
+            { $sort: { price: 1, _id: 1 } },
+            ...(isPaginatedRequest
+              ? [
+                  {
+                    $project: {
+                      price: 1,
+                      stock: 1,
+                      images: { $slice: ["$images", 1] },
+                    },
+                  },
+                ]
+              : []),
+          ],
+          as: "variants",
+        },
       },
-      {
-        // Filter the joined variants to only keep those with stock > 0
-        $addFields: {
-          variants: {
-            $filter: {
-              input: "$variants",
-              as: "variant",
-              cond: { $gt: ["$$variant.stock", 0] }
-            }
-          }
-        }
-      },
-      {
-        // Only return products that have at least one in-stock variant
-        $match: {
-          "variants.0": { $exists: true }
-        }
-      }
-    ]);
+      { $match: { "variants.0": { $exists: true } } },
+      ...(sortOrder === "featured"
+        ? []
+        : [{ $addFields: { minPrice: { $min: "$variants.price" } } }]),
+      ...(isPaginatedRequest
+        ? [
+            {
+              $facet: {
+                data: [
+                  { $sort: sortFields[sortOrder] },
+                  { $skip: skip },
+                  { $limit: limit },
+                  {
+                    $project: {
+                      _id: 1,
+                      name: 1,
+                      category: 1,
+                      subcategory: 1,
+                      variants: 1,
+                    },
+                  },
+                ],
+                metadata: [{ $count: "total" }],
+              },
+            },
+          ]
+        : [
+            ...(req.query.sort === undefined
+              ? []
+              : [{ $sort: sortFields[sortOrder] }]),
+            ...(sortOrder === "featured" ? [] : [{ $project: { minPrice: 0 } }]),
+          ]),
+    ];
 
-    if (productsWithVariants.length === 0) {
-      return res.status(404).json({ success: false, message: "Product Not Found" });
+    const results = await Product.aggregate(pipeline);
+
+    if (isPaginatedRequest) {
+      const result = results[0];
+      if (
+        !result ||
+        !Array.isArray(result.data) ||
+        !Array.isArray(result.metadata)
+      ) {
+        throw new Error("Product pagination query returned an invalid result.");
+      }
+
+      const products = result.data;
+      const total = result.metadata[0]?.total ?? 0;
+
+      return res.status(200).json({
+        success: true,
+        data: products,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+          hasNextPage: skip + products.length < total,
+        },
+      });
     }
 
-    return res.status(200).json({ success: true, data: productsWithVariants });
+    if (results.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Product Not Found",
+      });
+    }
+
+    return res.status(200).json({ success: true, data: results });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }
@@ -101,7 +268,6 @@ export const getTopSellingProducts = async (req, res) => {
   }
 };
 
-
 export const getProductById = async (req, res) => {
   try {
     const id = req.params.id;
@@ -133,7 +299,7 @@ export const getProductById = async (req, res) => {
       variants,
     };
 
-    return res.status(200).json({data:productWithVariants});
+    return res.status(200).json({ data: productWithVariants });
   } catch (err) {
     return res.status(500).json({
       success: false,
@@ -160,7 +326,9 @@ export const createProduct = async (req, res) => {
       vendor,
     });
 
-    return res.status(201).json({ data:product,message: "Successfully Created a Product" });
+    return res
+      .status(201)
+      .json({ data: product, message: "Successfully Created a Product" });
   } catch (err) {
     return res.status(500).json({
       success: false,
@@ -182,12 +350,7 @@ export const updateProduct = async (req, res) => {
 
     const { name, description, category, subcategory } = req.body;
 
-    if (
-      !name?.trim() ||
-      !description?.trim() ||
-      !category ||
-      !subcategory
-    ) {
+    if (!name?.trim() || !description?.trim() || !category || !subcategory) {
       return res.status(400).json({
         success: false,
         message: "All fields are required",
@@ -204,9 +367,7 @@ export const updateProduct = async (req, res) => {
     }
 
     // Vendor can edit only their own product
-    if (
-      product.vendor.toString() !== req.user._id.toString()
-    ) {
+    if (product.vendor.toString() !== req.user._id.toString()) {
       return res.status(403).json({
         success: false,
         message: "You are not authorized to edit this product",

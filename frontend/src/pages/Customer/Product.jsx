@@ -40,27 +40,101 @@ function Products() {
 
   const [sortOrder, setSortOrder] = useState("featured");
   const [loading, setLoading] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [loadError, setLoadError] = useState("");
+  const pageParam = searchParams.get("page");
+  const parsedPage = Number(pageParam);
+  const currentPage =
+    pageParam && Number.isSafeInteger(parsedPage) && parsedPage > 0
+      ? parsedPage
+      : 1;
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: PRODUCTS_PER_PAGE,
+    total: 0,
+    totalPages: 0,
+    hasNextPage: false,
+  });
 
-  // Fetch all products
+  const updatePage = (page) => {
+    const nextSearchParams = new URLSearchParams(searchParams);
+    if (page <= 1) {
+      nextSearchParams.delete("page");
+    } else {
+      nextSearchParams.set("page", String(page));
+    }
+
+    if (nextSearchParams.toString() !== searchParams.toString()) {
+      setSearchParams(nextSearchParams);
+    }
+  };
+
+  // Fetch the requested product page and apply catalog filters on the server.
   useEffect(() => {
+    const controller = new AbortController();
+
     const fetchProducts = async () => {
       try {
         setLoading(true);
+        setLoadError("");
 
-        const response = await api.get("/product");
-        const productData = response.data?.data || [];
+        const params = new URLSearchParams({
+          page: String(currentPage),
+          limit: String(PRODUCTS_PER_PAGE),
+          sort: sortOrder,
+        });
+        if (search) params.set("search", search);
+        if (selectedCategory !== "all") {
+          params.set("category", selectedCategory);
+        }
+        if (selectedSubcategory) {
+          params.set("subcategory", selectedSubcategory);
+        }
 
-        setProducts(productData);
+        const response = await api.get(`/product?${params.toString()}`, {
+          signal: controller.signal,
+        });
+
+        const responseData = response.data;
+        if (!Array.isArray(responseData?.data) || !responseData.pagination) {
+          throw new Error("The product API returned an invalid response.");
+        }
+
+        setProducts(responseData.data);
+        setPagination(responseData.pagination);
       } catch (error) {
-        console.error("Error fetching products:", error);
+        if (!controller.signal.aborted) {
+          console.error("Error fetching products:", error);
+          setLoadError(
+            error.response?.data?.message ||
+              error.message ||
+              "Unable to load products."
+          );
+          setProducts([]);
+          setPagination({
+            page: currentPage,
+            limit: PRODUCTS_PER_PAGE,
+            total: 0,
+            totalPages: 0,
+            hasNextPage: false,
+          });
+        }
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
       }
     };
 
     fetchProducts();
-  }, []);
+
+    return () => controller.abort();
+  }, [
+    currentPage,
+    search,
+    selectedCategory,
+    selectedSubcategory,
+    sortOrder,
+  ]);
 
   // Fetch categories
   useEffect(() => {
@@ -114,67 +188,23 @@ function Products() {
       ? subcategoryOptions.data
       : [];
 
-  // Filter and sort products
-  const filteredProducts = products
-    .filter((product) =>
-      product.name?.toLowerCase().includes(search.toLowerCase())
-    )
-    .filter((product) => {
-      if (selectedCategory === "all") return true;
-
-      const categoryId =
-        typeof product.category === "string"
-          ? product.category
-          : product.category?._id;
-
-      return categoryId === selectedCategory;
-    })
-    .filter((product) => {
-      if (!selectedSubcategory || selectedCategory === "all") {
-        return true;
-      }
-
-      const subcategoryId =
-        typeof product.subcategory === "string"
-          ? product.subcategory
-          : product.subcategory?._id;
-
-      return subcategoryId === selectedSubcategory;
-    })
-    .sort((first, second) => {
-      const firstPrice = Number(first.variants?.[0]?.price || 0);
-      const secondPrice = Number(second.variants?.[0]?.price || 0);
-
-      if (sortOrder === "price-low") {
-        return firstPrice - secondPrice;
-      }
-
-      if (sortOrder === "price-high") {
-        return secondPrice - firstPrice;
-      }
-
-      return 0;
-    });
-
-  // Reset to page 1 when search, filters, or sorting changes
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [search, selectedCategory, selectedSubcategory, sortOrder]);
-
   // Pagination calculations
-  const totalPages = Math.ceil(filteredProducts.length / PRODUCTS_PER_PAGE);
+  const totalPages = pagination.totalPages;
 
-  const startIndex = (currentPage - 1) * PRODUCTS_PER_PAGE;
-
-  const paginatedProducts = filteredProducts.slice(
-    startIndex,
-    startIndex + PRODUCTS_PER_PAGE
-  );
+  const firstItem =
+    pagination.total === 0 || currentPage > totalPages
+      ? 0
+      : (currentPage - 1) * pagination.limit + 1;
+  const lastItem =
+    firstItem === 0
+      ? 0
+      : Math.min(currentPage * pagination.limit, pagination.total);
 
   // Change page and jump back to the top, like a normal shopping site
   const goToPage = (page) => {
+    if (totalPages === 0) return;
     const safePage = Math.min(Math.max(1, page), totalPages);
-    setCurrentPage(safePage);
+    updatePage(safePage);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -189,6 +219,7 @@ function Products() {
       nextSearchParams.set("category", categoryId);
       nextSearchParams.delete("subcategory");
     }
+    nextSearchParams.delete("page");
 
     setSearchParams(nextSearchParams);
   };
@@ -202,6 +233,7 @@ function Products() {
     } else {
       nextSearchParams.delete("subcategory");
     }
+    nextSearchParams.delete("page");
 
     setSearchParams(nextSearchParams);
   };
@@ -230,7 +262,10 @@ function Products() {
             <select
               id="product-sort"
               value={sortOrder}
-              onChange={(event) => setSortOrder(event.target.value)}
+              onChange={(event) => {
+                setSortOrder(event.target.value);
+                updatePage(1);
+              }}
               className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
             >
               <option value="featured">Featured</option>
@@ -309,18 +344,15 @@ function Products() {
               <p className="text-sm text-slate-600">
                 Showing{" "}
                 <span className="font-semibold text-slate-900">
-                  {filteredProducts.length === 0 ? 0 : startIndex + 1}
+                  {firstItem}
                 </span>{" "}
                 to{" "}
                 <span className="font-semibold text-slate-900">
-                  {Math.min(
-                    startIndex + PRODUCTS_PER_PAGE,
-                    filteredProducts.length
-                  )}
+                  {lastItem}
                 </span>{" "}
                 of{" "}
                 <span className="font-semibold text-slate-900">
-                  {filteredProducts.length}
+                  {pagination.total}
                 </span>{" "}
                 products
               </p>
@@ -330,20 +362,26 @@ function Products() {
               <div className="flex min-h-[40vh] items-center justify-center rounded-2xl bg-white text-slate-500">
                 Loading products...
               </div>
-            ) : filteredProducts.length === 0 ? (
+            ) : loadError ? (
+              <div className="flex min-h-[40vh] items-center justify-center rounded-2xl bg-white px-4 text-center text-red-600">
+                {loadError}
+              </div>
+            ) : products.length === 0 ? (
               <div className="flex min-h-[40vh] items-center justify-center rounded-2xl bg-white px-4 text-center text-slate-500">
-                No products found. Try another search or category.
+                {pagination.total > 0
+                  ? "This page is no longer available. Choose another page."
+                  : "No products found. Try another search or category."}
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {paginatedProducts.map((product) => (
+                {products.map((product) => (
                   <ProductCard key={product._id} product={product} />
                 ))}
               </div>
             )}
 
             {/* Pagination: appears after the last product */}
-            {!loading && filteredProducts.length > 0 && totalPages > 1 && (
+            {!loading && !loadError && pagination.total > 0 && totalPages > 1 && (
               <nav
                 aria-label="Product pages"
                 className="mt-8 flex flex-col items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 sm:flex-row"
